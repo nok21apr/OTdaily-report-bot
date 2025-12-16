@@ -96,12 +96,12 @@ const WEB_CONFIG = {
         console.log('✅ Arrived at Report Page.');
 
         // ---------------------------------------------------------
-        // 3. Fill Form & Date Logic
+        // 3. Fill Form & Date Logic (Fixed)
         // ---------------------------------------------------------
         console.log('📝 Filling form...');
         await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype', { visible: true });
         await page.select('#ctl00_ContentPlaceHolder1_ddlDoctype', '1');
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 2000));
 
         const otTypeSelector = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(otTypeSelector) !== null) {
@@ -109,18 +109,36 @@ const WEB_CONFIG = {
             await new Promise(r => setTimeout(r, 2000));
         }
 
+        // --- คำนวณวันที่ 1 ของเดือนปัจจุบัน (Logic เดิมถูกต้องแล้ว) ---
         const now = new Date();
-        const thaiYear = now.getFullYear() + 543;
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const firstDayValue = `01/${month}/${thaiYear}`;
+        const thaiYear = now.getFullYear() + 543; // ปี พ.ศ.
+        const month = String(now.getMonth() + 1).padStart(2, '0'); // เดือนปัจจุบัน
+        const firstDayValue = `01/${month}/${thaiYear}`; // เช่น 01/12/2568
         
         console.log(`📅 Setting date to: ${firstDayValue}`);
         const dateInputSelector = '#ctl00_ContentPlaceHolder1_txtFromDate';
         await page.waitForSelector(dateInputSelector);
-        await page.$eval(dateInputSelector, el => el.value = ''); 
-        await page.type(dateInputSelector, firstDayValue, { delay: 100 });
-        await page.keyboard.press('Tab');
+        
+        // [แก้ใหม่] วิธีลบค่าเก่าที่ชัวร์กว่า (Click -> Ctrl+A -> Backspace)
+        await page.click(dateInputSelector); 
+        await new Promise(r => setTimeout(r, 500)); // รอแป๊บ
+        
+        await page.keyboard.down('Control');
+        await page.keyboard.press('A');
+        await page.keyboard.up('Control');
+        await page.keyboard.press('Backspace');
+        
+        await new Promise(r => setTimeout(r, 500)); // รอให้ช่องว่างเปล่า
 
+        // พิมพ์ค่าใหม่ลงไป
+        await page.type(dateInputSelector, firstDayValue, { delay: 100 });
+        
+        // กด Tab เพื่อปิดปฏิทิน
+        await page.keyboard.press('Tab');
+        
+        // (แถม) คลิกที่ว่าง 1 ที เพื่อปิดปฏิทินให้ชัวร์ (กันมันบังปุ่มอื่น)
+        await page.click('body');
+    
         // ---------------------------------------------------------
         // 4. Generate Report & SWITCH TAB
         // ---------------------------------------------------------
