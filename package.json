@@ -1,11 +1,12 @@
 {
-  "name": "auto-report-sender",
+  "name": "auto-report-bplus",
   "version": "1.0.0",
-  "description": "Download report, convert to CSV UTF-8, and send via email",
+  "description": "Auto Export Crystal Report to CSV",
   "main": "script.js",
   "dependencies": {
-    "puppeteer": "^23.0.0",
+    "dotenv": "^16.3.1",
     "nodemailer": "^6.9.0",
+    "puppeteer": "^23.0.0",
     "xlsx": "^0.18.5"
   }
 }
