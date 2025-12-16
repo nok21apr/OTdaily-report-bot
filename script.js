@@ -19,19 +19,17 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame แบบกัดไม่ปล่อย (Retry 60s)
+// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame (รองรับ Dynamic ID)
 async function findElementRecursive(page, selectors, timeout = 60000) {
     const start = Date.now();
-    console.log(`   🕵️‍♂️ Searching for: ${selectors.join(' OR ')}`);
+    console.log(`   🕵️‍♂️ Searching for: ${selectors[0]}...`);
     
     while (Date.now() - start < timeout) {
         const frames = page.frames();
-        // วนหาในทุก Frame
         for (const frame of frames) {
             for (const selector of selectors) {
                 try {
                     let el;
-                    // รองรับทั้ง XPath (//) และ CSS Selector
                     if (selector.startsWith('//')) {
                         const els = await frame.$x(selector);
                         if (els.length > 0) el = els[0];
@@ -40,23 +38,19 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
                     }
 
                     if (el) {
-                        // เช็คว่า Element มองเห็นจริงไหม (Visible)
                         const isVisible = await el.evaluate(e => {
                             const style = window.getComputedStyle(e);
                             return style && style.display !== 'none' && style.visibility !== 'hidden';
                         });
                         
                         if (isVisible) {
-                            console.log(`   ✅ Found element in frame: "${frame.name() || 'unnamed'}" using selector: "${selector}"`);
+                            console.log(`   ✅ Found element in frame: "${frame.name() || 'unnamed'}"`);
                             return { frame, element: el };
                         }
                     }
-                } catch (e) { 
-                    // ข้าม Error กรณี Frame โหลดไม่เสร็จ
-                }
+                } catch (e) { }
             }
         }
-        // รอ 1 วินาทีแล้ววนหาใหม่
         await new Promise(r => setTimeout(r, 1000));
     }
     return null;
@@ -136,19 +130,22 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         console.log('✅ Arrived at Report Form Page.');
 
         // ---------------------------------------------------------
-        // 3. Fill Form & Date Logic
+        // 3. Fill Form & Date Logic (UI.Vision Lines 2-9)
         // ---------------------------------------------------------
         console.log('📝 Filling form...');
+        // เลือกประเภทเอกสาร
         await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype', { visible: true });
         await page.select('#ctl00_ContentPlaceHolder1_ddlDoctype', '1');
         await new Promise(r => setTimeout(r, 3000));
 
+        // เลือก OT
         const otTypeSelector = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(otTypeSelector) !== null) {
             await page.select(otTypeSelector, '14');
             await new Promise(r => setTimeout(r, 2000));
         }
 
+        // ใส่วันที่ (ใช้วันที่ 1 ของเดือนตามที่คุณต้องการ)
         const now = new Date();
         const thaiYear = now.getFullYear() + 543;
         const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -162,24 +159,25 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await page.keyboard.press('Tab');
 
         // ---------------------------------------------------------
-        // 4. Generate Report & SWITCH TAB
+        // 4. Generate Report & SWITCH TAB (UI.Vision Line 13-14)
         // ---------------------------------------------------------
         console.log('⏳ Generating Report...');
         
-        // ดักจับ Tab ใหม่
+        // 🟢 เตรียมดักจับหน้าต่างใหม่ (New Tab) - หัวใจสำคัญ!
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
         
+        // กดปุ่มแสดงรายงาน
         await page.click('#ctl00_ContentPlaceHolder1_lnkShowReport');
         
-        // รอรับ Tab ใหม่
+        // 🟢 รอและสลับไปหน้าใหม่
         const reportPage = await newPagePromise;
         if (!reportPage) throw new Error("Report tab did not open!");
         
-        console.log('✅ Switched to New Report Tab');
+        console.log('✅ Switched to New Report Tab (ReportView.aspx)');
         await reportPage.bringToFront();
         await reportPage.setViewport({ width: 1366, height: 768 });
         
-        // รอโหลด (Hard Wait)
+        // รอโหลดหน้าใหม่
         console.log('   Waiting 15s for Crystal Report Iframe...');
         await new Promise(r => setTimeout(r, 15000));
 
@@ -191,39 +189,32 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (แก้ไขจุดที่ Error)
+        // 5. Crystal Report Export (อ้างอิง UI.Vision Lines 15-18)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
-        // 🛑 แก้ไข: ใช้ Selector ภาษาอังกฤษเป็นตัวหลัก (เลี่ยงปัญหาภาษาไทยเพี้ยน)
+        // 5.1 กดปุ่ม Toolbar (UI.Vision Line 15)
+        // ใช้ ID ภาษาไทยจากไฟล์ text หรือ Partial Match
         const iconSelectors = [
-            'img[alt="Export this report"]', // ตัวนี้แม่นยำที่สุด (จากภาพที่คุณส่งมา)
-            '[title="Export this report"]',
-            '[id$="_toptoolbar_export"]'     // หา ID ที่ลงท้ายด้วย _toptoolbar_export
+            '[id*="IconImg_รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน_toptoolbar_export"]', 
+            '[id$="_toptoolbar_export"]' // สำรอง
         ];
         
         console.log('   1. Searching for Toolbar Export Icon...');
-        
-        // ใช้เวลาหา 60 วินาที
+        // **ใช้ reportPage ในการค้นหา**
         const iconFound = await findElementRecursive(reportPage, iconSelectors, 60000);
         
-        if (!iconFound) {
-            console.error('❌ Toolbar Icon NOT found. Report might not be loaded or ID mismatch.');
-            // ถ่ายรูปเพื่อดูว่าหน้าตาตอนหาไม่เจอเป็นยังไง
-            await reportPage.screenshot({ path: 'debug_not_found.png', fullPage: true });
-            throw new Error("Could not find Toolbar Export Icon!");
-        }
+        if (!iconFound) throw new Error("Could not find Toolbar Export Icon!");
         
         await iconFound.element.evaluate(el => el.click());
         const activeFrame = iconFound.frame; 
 
-        // 5.2 รอ Dialog
+        // 5.2 รอ Dialog และกด Dropdown (UI.Vision Line 16)
         console.log('   Waiting for Dialog...');
         await new Promise(r => setTimeout(r, 3000));
 
-        // 5.3 กด Dropdown
         console.log('   2. Clicking Dropdown Arrow...');
-        const dropdownSelectors = ['[id$="_dialog_combo"]'];
+        const dropdownSelectors = ['[id$="_dialog_combo"]']; // จาก UI.Vision
         const dropdownFound = await findElementRecursive(reportPage, dropdownSelectors, 10000);
         
         if (dropdownFound) {
@@ -231,31 +222,42 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        // 5.4 เลือก Excel Data-only
+        // 5.3 เลือก Excel Data-only (UI.Vision Line 17)
+        // ใช้ ID ที่ลงท้ายด้วย _it_14 (ตามไฟล์ Text เป๊ะๆ)
         console.log('   3. Selecting Excel Data-only...');
-        const excelOption = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
         
-        if (excelOption.length > 0) {
-            await excelOption[0].click();
+        const excelOptionID = await activeFrame.$('[id$="_dialog_combo_it_14"]');
+        
+        if (excelOptionID) {
+            console.log('   ✅ Found option by ID suffix (_it_14)');
+            await excelOptionID.click();
         } else {
-            console.warn('⚠️ Text option not found, using ArrowDown Fallback...');
-            await reportPage.keyboard.press('ArrowDown');
-            await reportPage.keyboard.press('ArrowDown');
-            await reportPage.keyboard.press('Enter');
+            // สำรอง: หาด้วย Text
+            console.log('   ⚠️ ID not found, trying text match...');
+            const excelOptionText = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
+            if (excelOptionText.length > 0) {
+                await excelOptionText[0].click();
+            } else {
+                console.warn('⚠️ Option not found, using ArrowDown Fallback...');
+                await reportPage.keyboard.press('ArrowDown');
+                await reportPage.keyboard.press('ArrowDown');
+                await reportPage.keyboard.press('Enter');
+            }
         }
         await new Promise(r => setTimeout(r, 2000));
 
-        // 5.5 กดปุ่ม Export สุดท้าย
+        // 5.4 กดปุ่ม Export สุดท้าย (UI.Vision Line 18)
         console.log('   4. Clicking Final Export Button...');
         const finalBtnSelectors = [
-            'a.wizbutton[id$="_dialog_submitBtn"]', 
+            '//a[text()="Export"]',        // ตาม linkText ใน UI.Vision
+            'a[id$="_dialog_submitBtn"]',  // ตาม ID ใน UI.Vision
             '[id$="_dialog_submitBtn"]'
         ];
         
         const finalBtnFound = await findElementRecursive(reportPage, finalBtnSelectors);
         
         if (finalBtnFound) {
-            console.log('   ✅ Found WizButton! Clicking...');
+            console.log('   ✅ Found Final Button! Clicking...');
             await finalBtnFound.element.evaluate(el => el.click());
         } else {
             console.warn('⚠️ Final Button not found. Pressing Enter...');
@@ -319,6 +321,12 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
 
     } catch (error) {
         console.error('❌ Error occurred:', error);
+        try {
+            if (page && !page.isClosed()) await page.screenshot({ path: 'error_main.png', fullPage: true });
+            const pages = await browser.pages();
+            if (pages.length > 1) await pages[pages.length-1].screenshot({ path: 'error_report.png', fullPage: true });
+        } catch(e){}
+
         if (browser) await browser.close();
         process.exit(1);
     }
