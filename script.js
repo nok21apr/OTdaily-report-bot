@@ -22,7 +22,7 @@ const WEB_CONFIG = {
 // 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame แบบกัดไม่ปล่อย (Retry 60s)
 async function findElementRecursive(page, selectors, timeout = 60000) {
     const start = Date.now();
-    console.log(`   🕵️‍♂️ Searching for: ${selectors.join(', ')}`);
+    console.log(`   🕵️‍♂️ Searching for: ${selectors.join(' OR ')}`);
     
     while (Date.now() - start < timeout) {
         const frames = page.frames();
@@ -31,7 +31,6 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
                 try {
                     const el = await frame.$(selector);
                     if (el) {
-                        // เช็คว่ามองเห็นจริงไหม
                         const isVisible = await el.evaluate(e => {
                             const style = window.getComputedStyle(e);
                             return style && style.display !== 'none' && style.visibility !== 'hidden' && e.offsetParent !== null;
@@ -45,7 +44,7 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
                 } catch (e) { }
             }
         }
-        await new Promise(r => setTimeout(r, 1000)); // รอ 1 วิแล้วหาใหม่
+        await new Promise(r => setTimeout(r, 1000));
     }
     return null;
 }
@@ -90,7 +89,6 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await page.type('#txtUsername', WEB_CONFIG.user.trim(), { delay: 50 });
         await page.type('#txtPassword', WEB_CONFIG.pass.trim(), { delay: 50 });
         
-        console.log('   Pressing Enter to login...');
         await Promise.all([
             page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
             page.keyboard.press('Enter')
@@ -113,7 +111,6 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         const parentMenuSelector = '#ctl00_Report_Menu > a';
         await page.waitForSelector(parentMenuSelector, { visible: true, timeout: 30000 });
         await page.click(parentMenuSelector);
-        
         await new Promise(r => setTimeout(r, 1000));
 
         const subMenuSelector = '#ctl00_Report_Menu > ul a'; 
@@ -131,8 +128,6 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         console.log('📝 Filling form...');
         await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype', { visible: true });
         await page.select('#ctl00_ContentPlaceHolder1_ddlDoctype', '1');
-        
-        console.log('   Waiting for page update...');
         await new Promise(r => setTimeout(r, 3000));
 
         const otTypeSelector = '#ctl00_ContentPlaceHolder1_ddlOt';
@@ -167,7 +162,6 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await page.bringToFront();
         await page.setViewport({ width: 1366, height: 768 });
         
-        // รอให้ Report โหลด Iframe ครบ
         console.log('   Waiting 15s for Crystal Report Iframe...');
         await new Promise(r => setTimeout(r, 15000));
 
@@ -178,13 +172,14 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Final Fix)
+        // 5. Crystal Report Export (WizButton Fix)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
-        // 5.1 หาปุ่ม Export Icon (รูปเครื่องพิมพ์/ส่งออก)
+        // 5.1 หาปุ่ม Export Icon
         const iconSelectors = [
             '[id$="_toptoolbar_export"]', 
+            '[id*="toptoolbar_export"]', 
             'a[title="Export this report"]'
         ];
         
@@ -193,15 +188,13 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         
         if (!iconFound) throw new Error("Could not find Toolbar Export Icon!");
         
-        // บังคับคลิกด้วย JS
         await iconFound.element.evaluate(el => el.click());
-        const activeFrame = iconFound.frame; // จำ Frame ที่เจอไว้
+        const activeFrame = iconFound.frame; 
 
         // 5.2 รอ Dialog และหา Dropdown
         console.log('   Waiting for Dialog...');
         await new Promise(r => setTimeout(r, 3000));
 
-        // คลิกเปิด Dropdown
         console.log('   2. Clicking Dropdown Arrow...');
         const dropdownSelectors = ['[id$="_dialog_combo"]'];
         const dropdownFound = await findElementRecursive(page, dropdownSelectors, 5000);
@@ -223,26 +216,62 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             await page.keyboard.press('ArrowDown');
             await page.keyboard.press('Enter');
         }
-        await new Promise(r => setTimeout(r, 2000)); // 🔴 รอให้ค่าใน Dropdown เปลี่ยนเสร็จก่อน
+        await new Promise(r => setTimeout(r, 2000));
 
-        // 5.4 กดปุ่ม Export สุดท้าย (จุดที่เคย Error)
+        // 5.4 กดปุ่ม Export สุดท้าย (WizButton Fix)
         console.log('   4. Clicking Final Export Button...');
         
-        // Selector: ใช้ id ลงท้ายด้วย _dialog_submitBtn (ครอบคลุมทั้ง A และ TD ที่คุณส่งมา)
         const finalBtnSelectors = [
-            'a[id$="_dialog_submitBtn"]',  // ลองหาตัวปุ่มจริงก่อน
-            '[id$="_dialog_submitBtn"]'    // ถ้าไม่เจอ ลองหากรอบนอก (TD)
+            // 🟢 Target ตาม HTML ที่คุณส่งมาเป๊ะๆ:
+            // a tag + class wizbutton + id ลงท้าย _dialog_submitBtn
+            'a.wizbutton[id$="_dialog_submitBtn"]', 
+            
+            // สำรอง 1: a tag ที่ id ขึ้นต้น theBttn และลงท้าย _dialog_submitBtn
+            'a[id^="theBttn"][id$="_dialog_submitBtn"]',
+
+            // สำรอง 2: หาจาก Text "Export" โดยตรง
+            '//a[text()="Export"]' // XPath
         ];
         
-        // ใช้ฟังก์ชัน Recursive หาในทุก Frame
-        const finalBtnFound = await findElementRecursive(page, finalBtnSelectors);
+        // ใช้ Recursive หาในทุก Frame (รองรับทั้ง CSS และ XPath)
+        let finalBtnFound = null;
+        const start = Date.now();
+        while (Date.now() - start < 60000 && !finalBtnFound) {
+            const frames = page.frames();
+            for (const frame of frames) {
+                for (const sel of finalBtnSelectors) {
+                    try {
+                        let el;
+                        if (sel.startsWith('//')) {
+                            const els = await frame.$x(sel);
+                            if (els.length > 0) el = els[0];
+                        } else {
+                            el = await frame.$(sel);
+                        }
+                        
+                        if (el) {
+                             const isVisible = await el.evaluate(e => {
+                                const style = window.getComputedStyle(e);
+                                return style && style.display !== 'none' && style.visibility !== 'hidden';
+                            });
+                            if (isVisible) {
+                                finalBtnFound = { frame, element: el };
+                                break;
+                            }
+                        }
+                    } catch (e) {}
+                }
+                if (finalBtnFound) break;
+            }
+            await new Promise(r => setTimeout(r, 1000));
+        }
         
         if (finalBtnFound) {
-            console.log('   ✅ Found Final Button! Clicking...');
-            // ใช้ evaluate click เพื่อความชัวร์ (เหมือนคนกดผ่าน console)
+            console.log('   ✅ Found WizButton! Clicking...');
+            // ใช้ evaluate click เพื่อความชัวร์ที่สุดสำหรับ a href="javascript:..."
             await finalBtnFound.element.evaluate(el => el.click());
         } else {
-            console.warn('⚠️ Final Button not found by ID. Trying Enter key...');
+            console.warn('⚠️ Final Button not found. Pressing Enter as last resort...');
             await page.keyboard.press('Enter');
         }
 
@@ -251,7 +280,6 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        // รอ 90 วินาที
         for (let i = 0; i < 90; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
