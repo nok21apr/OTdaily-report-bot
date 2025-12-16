@@ -1,0 +1,11 @@
+{
+  "name": "auto-report-sender",
+  "version": "1.0.0",
+  "description": "Download report, convert to CSV UTF-8, and send via email",
+  "main": "script.js",
+  "dependencies": {
+    "puppeteer": "^23.0.0",
+    "nodemailer": "^6.9.0",
+    "xlsx": "^0.18.5"
+  }
+}
