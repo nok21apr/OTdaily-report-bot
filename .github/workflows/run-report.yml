@@ -46,5 +46,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: error-screenshot
-          path: *.png
+          path: "*.png"
           retention-days: 5
