@@ -19,7 +19,7 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame (รองรับ Dynamic ID)
+// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame (จำเป็นมากสำหรับ Crystal Report)
 async function findElementRecursive(page, selectors, timeout = 60000) {
     const start = Date.now();
     console.log(`   🕵️‍♂️ Searching for: ${selectors[0]}...`);
@@ -59,11 +59,13 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
 (async () => {
     const downloadPath = path.resolve(__dirname, 'downloads');
     
+    // ตรวจสอบค่า Config
     if (!WEB_CONFIG.user || !WEB_CONFIG.pass) {
-        console.error('❌ Error: Secrets incomplete.');
+        console.error('❌ Error: Secrets incomplete. Please check .env file.');
         process.exit(1);
     }
     
+    // เคลียร์ไฟล์เก่า
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
     fs.mkdirSync(downloadPath);
 
@@ -130,22 +132,19 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         console.log('✅ Arrived at Report Form Page.');
 
         // ---------------------------------------------------------
-        // 3. Fill Form & Date Logic (UI.Vision Lines 2-9)
+        // 3. Fill Form & Date Logic
         // ---------------------------------------------------------
         console.log('📝 Filling form...');
-        // เลือกประเภทเอกสาร
         await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype', { visible: true });
         await page.select('#ctl00_ContentPlaceHolder1_ddlDoctype', '1');
         await new Promise(r => setTimeout(r, 3000));
 
-        // เลือก OT
         const otTypeSelector = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(otTypeSelector) !== null) {
             await page.select(otTypeSelector, '14');
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // ใส่วันที่ (ใช้วันที่ 1 ของเดือนตามที่คุณต้องการ)
         const now = new Date();
         const thaiYear = now.getFullYear() + 543;
         const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -159,11 +158,11 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await page.keyboard.press('Tab');
 
         // ---------------------------------------------------------
-        // 4. Generate Report & SWITCH TAB (UI.Vision Line 13-14)
+        // 4. Generate Report & SWITCH TAB
         // ---------------------------------------------------------
         console.log('⏳ Generating Report...');
         
-        // 🟢 เตรียมดักจับหน้าต่างใหม่ (New Tab) - หัวใจสำคัญ!
+        // 🟢 เตรียมดักจับหน้าต่างใหม่ (New Tab)
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
         
         // กดปุ่มแสดงรายงาน
@@ -177,9 +176,12 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await reportPage.bringToFront();
         await reportPage.setViewport({ width: 1366, height: 768 });
         
-        // รอโหลดหน้าใหม่
-        console.log('   Waiting 15s for Crystal Report Iframe...');
-        await new Promise(r => setTimeout(r, 15000));
+        // รอโหลดหน้าใหม่ (ใช้ catch เผื่อ timeout แต่หน้าโหลดเสร็จแล้ว)
+        try {
+            await reportPage.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 });
+        } catch (e) {
+            console.log('   (Navigation wait completed or timeout, proceeding...)');
+        }
 
         // Setup Download บนหน้าใหม่
         const reportClient = await reportPage.target().createCDPSession();
@@ -189,32 +191,33 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (อ้างอิง UI.Vision Lines 15-18)
+        // 5. Crystal Report Export (Logic ใหม่ตามคำแนะนำของคุณ)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
-        // 5.1 กดปุ่ม Toolbar (UI.Vision Line 15)
-        // ใช้ ID ภาษาไทยจากไฟล์ text หรือ Partial Match
+        // 5.1 กดปุ่ม Toolbar (ใช้ ID Partial Match)
+        console.log('   1. Clicking Export Icon...');
         const iconSelectors = [
-            '[id*="IconImg_รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน_toptoolbar_export"]', 
-            '[id$="_toptoolbar_export"]' // สำรอง
+            '[id*="toptoolbar_export"]',  // ตามคำแนะนำของคุณ
+            '#IconImg_รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน_toptoolbar_export' // สำรอง (เต็มยศ)
         ];
         
-        console.log('   1. Searching for Toolbar Export Icon...');
-        // **ใช้ reportPage ในการค้นหา**
         const iconFound = await findElementRecursive(reportPage, iconSelectors, 60000);
-        
         if (!iconFound) throw new Error("Could not find Toolbar Export Icon!");
         
         await iconFound.element.evaluate(el => el.click());
         const activeFrame = iconFound.frame; 
 
-        // 5.2 รอ Dialog และกด Dropdown (UI.Vision Line 16)
+        // 5.2 รอ Dialog และกด Dropdown
         console.log('   Waiting for Dialog...');
         await new Promise(r => setTimeout(r, 3000));
 
-        console.log('   2. Clicking Dropdown Arrow...');
-        const dropdownSelectors = ['[id$="_dialog_combo"]']; // จาก UI.Vision
+        console.log('   2. Opening Format Dropdown...');
+        // ใช้ Selector แบบ Partial ID ตามที่คุณแนะนำ
+        const dropdownSelectors = [
+            'div[id*="IconImg_Txt_iconMenu_icon"][id*="dialog_combo"]', // ตามคำแนะนำ
+            '[id$="_dialog_combo"]' // สำรอง
+        ];
         const dropdownFound = await findElementRecursive(reportPage, dropdownSelectors, 10000);
         
         if (dropdownFound) {
@@ -222,23 +225,27 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        // 5.3 เลือก Excel Data-only (UI.Vision Line 17)
-        // ใช้ ID ที่ลงท้ายด้วย _it_14 (ตามไฟล์ Text เป๊ะๆ)
-        console.log('   3. Selecting Excel Data-only...');
+        // 5.3 เลือก Excel Data-only (Item 14)
+        console.log('   3. Selecting Format (Excel Data-only)...');
         
-        const excelOptionID = await activeFrame.$('[id$="_dialog_combo_it_14"]');
+        // ใช้ Selector เจาะจงที่ลงท้ายด้วย _it_14 ตามที่คุณแนะนำและไฟล์ UI.Vision
+        const itemSelectors = [
+            'span[id*="iconMenu_menu"][id*="it_14"]', // ตามคำแนะนำ
+            '[id$="_it_14"]' // สำรอง
+        ];
         
-        if (excelOptionID) {
-            console.log('   ✅ Found option by ID suffix (_it_14)');
-            await excelOptionID.click();
+        const formatItemFound = await findElementRecursive(reportPage, itemSelectors, 10000);
+        
+        if (formatItemFound) {
+            console.log('   ✅ Found format item (it_14). Clicking...');
+            await formatItemFound.element.evaluate(el => el.click());
         } else {
-            // สำรอง: หาด้วย Text
-            console.log('   ⚠️ ID not found, trying text match...');
+            console.warn('⚠️ Format item not found via ID. Trying Text Match...');
             const excelOptionText = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
             if (excelOptionText.length > 0) {
                 await excelOptionText[0].click();
             } else {
-                console.warn('⚠️ Option not found, using ArrowDown Fallback...');
+                console.warn('⚠️ Text match failed. Using ArrowDown Fallback...');
                 await reportPage.keyboard.press('ArrowDown');
                 await reportPage.keyboard.press('ArrowDown');
                 await reportPage.keyboard.press('Enter');
@@ -246,12 +253,11 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         }
         await new Promise(r => setTimeout(r, 2000));
 
-        // 5.4 กดปุ่ม Export สุดท้าย (UI.Vision Line 18)
+        // 5.4 กดปุ่ม Export สุดท้าย (LinkText = Export)
         console.log('   4. Clicking Final Export Button...');
         const finalBtnSelectors = [
-            '//a[text()="Export"]',        // ตาม linkText ใน UI.Vision
-            'a[id$="_dialog_submitBtn"]',  // ตาม ID ใน UI.Vision
-            '[id$="_dialog_submitBtn"]'
+            '//a[text()="Export"]',       // ตามคำแนะนำ
+            'a[id$="_dialog_submitBtn"]'  // สำรอง
         ];
         
         const finalBtnFound = await findElementRecursive(reportPage, finalBtnSelectors);
@@ -260,7 +266,7 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             console.log('   ✅ Found Final Button! Clicking...');
             await finalBtnFound.element.evaluate(el => el.click());
         } else {
-            console.warn('⚠️ Final Button not found. Pressing Enter...');
+            console.warn('⚠️ Final Button not found. Pressing Enter as last resort...');
             await reportPage.keyboard.press('Enter');
         }
 
@@ -269,7 +275,8 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        for (let i = 0; i < 120; i++) { 
+        // รอ 5 นาที (300 วินาที) เผื่อไฟล์ใหญ่
+        for (let i = 0; i < 300; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
                 const files = fs.readdirSync(downloadPath);
