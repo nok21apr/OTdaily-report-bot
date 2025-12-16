@@ -148,47 +148,50 @@ const WEB_CONFIG = {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Strict Keyboard Sequence)
+        // 5. Crystal Report Export (Strict Keyboard Sequence) - ADJUSTED
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export via Keyboard...');
-
-        // คลิกที่ว่างๆ 1 ที เพื่อ Focus หน้าเว็บก่อนเริ่มกดปุ่ม
+        
+        // คลิกที่ว่างๆ 1 ที เพื่อ Focus หน้าเว็บ
         try { await reportPage.click('body'); } catch(e) {}
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 2000)); // รอ 2 วินาทีให้ Focus นิ่ง
 
         // --- Sequence 1: เปิด Dialog ---
         console.log('   1. Opening Dialog (Tab x2 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000)); // รอ 1 วิ
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000)); // รอ 1 วิ
         await reportPage.keyboard.press('Enter');
         
-        console.log('      (Waiting 3s for Dialog to appear...)');
-        await new Promise(r => setTimeout(r, 3000));
+        // [จุดสำคัญ] หน้าต่าง Dialog มักจะโหลดนาน ให้รอ 10 วินาที เพื่อความชัวร์
+        console.log('      (Waiting 10s for Dialog to fully appear...)');
+        await new Promise(r => setTimeout(r, 10000)); 
 
         // --- Sequence 2: เข้าเมนูเลือกไฟล์ ---
         console.log('   2. Entering Format Menu (Tab x1 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
         await reportPage.keyboard.press('Enter');
         
-        console.log('      (Waiting 2s for Menu options...)');
-        await new Promise(r => setTimeout(r, 2000));
+        // รอเมนู Dropdown ไหลลงมา
+        console.log('      (Waiting 5s for Menu options...)');
+        await new Promise(r => setTimeout(r, 5000));
 
         // --- Sequence 3: เลือก Excel Data-only ---
         console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
         for (let i = 0; i < 4; i++) {
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 800)); // รอระหว่างกด Tab นานขึ้นนิดนึง
         }
         await reportPage.keyboard.press('Enter');
         
-        console.log('      (Waiting 2s for selection...)');
-        await new Promise(r => setTimeout(r, 2000));
+        // รอให้ระบบเลือกค่าเสร็จ (บางทีเลือกแล้วมันจะกระพริบโหลด)
+        console.log('      (Waiting 5s for selection confirmation...)');
+        await new Promise(r => setTimeout(r, 5000));
 
         // --- Sequence 4: กดปุ่ม Export สุดท้าย ---
-        console.log('   4. Clicking Export Button (Tab x2 -> Enter)...');
-        for (let i = 0; i < 2; i++) {
+        console.log('   4. Clicking Export Button (Tab x4 -> Enter)...');
+        for (let i = 0; i < 3; i++) { // **ลองตรวจสอบว่าต้องกด Tab กี่ครั้งแน่ (2 หรือ 3)**
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 800));
         }
         await reportPage.keyboard.press('Enter');
 
