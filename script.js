@@ -9,7 +9,7 @@ const xlsx = require('xlsx');
 const EMAIL_CONFIG = {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_PASS,
-    to:   'recipient_email@example.com', // 🔴 แก้ไขอีเมลปลายทางที่นี่
+    to:   'naruesit_jit@ttkasia.co.th', // 🔴 แก้ไขอีเมลปลายทางที่นี่
     subject: 'Daily Overtime Report (CSV)',
     text: 'Attached is the requested report in CSV UTF-8 format.'
 };
