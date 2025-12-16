@@ -27,9 +27,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # ... (Steps ก่อนหน้า: Run Script) ...
+
       - name: Run Script
-        # ส่งค่ารหัสผ่านจาก Secrets เข้าไปใน Script
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
         run: node script.js
+
+      # -------------------------------------------------------------
+      # 📸 ส่วนที่เพิ่ม: อัปโหลดรูป Debug (จะทำงานเฉพาะตอน Error เท่านั้น)
+      # -------------------------------------------------------------
+      - name: Upload Debug Screenshot
+        if: failure() # บรรทัดนี้สำคัญ! บอกว่าให้ทำเฉพาะตอน "Script พัง"
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshot
+          path: error_screenshot.png
+          retention-days: 5 # เก็บไฟล์ไว้ 5 วันแล้วลบทิ้ง
