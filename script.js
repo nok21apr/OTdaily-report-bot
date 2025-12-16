@@ -19,47 +19,24 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: พยายามหา Element ในทุก Frame โดยอัตโนมัติ (ฉลาดขึ้น)
-async function findAndClickInFrames(page, selectors) {
-    const startTime = Date.now();
-    const timeout = 60000; // ให้เวลาหา 60 วินาที
-
-    console.log('   🕵️‍♂️ Searching for button in all frames...');
-
-    while (Date.now() - startTime < timeout) {
-        // 1. ดึงรายชื่อ Frame ทั้งหมดใหม่ทุกรอบ (เผื่อมีการโหลด Iframe ใหม่)
+// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame แบบกัดไม่ปล่อย
+async function findElementRecursive(page, selectors, timeout = 30000) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
         const frames = page.frames();
-        
-        // 2. วนลูปหาในทุก Frame
         for (const frame of frames) {
             for (const selector of selectors) {
                 try {
-                    // ลองหา Element
-                    const element = await frame.$(selector);
-                    if (element) {
-                        // เช็คว่าปุ่มมองเห็นจริงไหม (Visible)
-                        const isVisible = await element.evaluate(el => {
-                            const style = window.getComputedStyle(el);
-                            return style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetParent !== null;
-                        });
-
-                        if (isVisible) {
-                            console.log(`   ✅ Found button! (Frame: ${frame.name() || 'unnamed'}, Selector: ${selector})`);
-                            
-                            // เลื่อนเมาส์ไปชี้ก่อน แล้วค่อยคลิก (ช่วยเรื่องปุ่ม Hover)
-                            await element.hover(); 
-                            await new Promise(r => setTimeout(r, 500));
-                            await element.click();
-                            return frame; // ส่งคืน Frame ที่เจอ เพื่อใช้ต่อ
-                        }
+                    const el = await frame.$(selector);
+                    if (el) {
+                        // เช็คว่ามองเห็นจริงไหม
+                        const box = await el.boundingBox();
+                        if (box) return { frame, element: el };
                     }
-                } catch (e) {
-                    // Ignore errors (frame detached etc.)
-                }
+                } catch (e) { }
             }
         }
-        // ถ้าไม่เจอ ให้รอ 2 วินาทีแล้วหาใหม่
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 1000)); // รอ 1 วิแล้วหาใหม่
     }
     return null;
 }
@@ -179,13 +156,12 @@ async function findAndClickInFrames(page, selectors) {
         
         page = reportPage; 
         await page.bringToFront();
-        await page.setViewport({ width: 1366, height: 768 }); // จอใหญ่หน่อย
+        await page.setViewport({ width: 1366, height: 768 });
         
-        // รอแบบ Hard Wait นานๆ เลย เพื่อให้ Crystal Report โหลด Iframe ครบ
-        console.log('   Waiting 10s for Crystal Report to load...');
+        // Hard Wait: รอให้ Report โหลด Iframe ให้ครบก่อน (สำคัญมาก!)
+        console.log('   Waiting 10s for Crystal Report Iframe...');
         await new Promise(r => setTimeout(r, 10000));
 
-        // Setup Download
         const reportClient = await page.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
             behavior: 'allow',
@@ -193,75 +169,70 @@ async function findAndClickInFrames(page, selectors) {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (The Hunt Begins!)
+        // 5. Crystal Report Export (Fixed Step)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
-        // รายชื่อตัวจับปุ่ม Export (ลองหลายๆ แบบ)
-        const exportSelectors = [
-            '[id$="_toptoolbar_export"]',          // จับ ID ส่วนท้าย (มาตรฐาน)
-            'a[title="Export this report"]',       // จับ Title ภาษาอังกฤษ
-            'img[alt="Export this report"]',       // จับ Alt ภาพ
-            'a[title*="Export"]',                  // จับ Title มีคำว่า Export
-            '[id*="IconImg"][id*="export"]'        // จับ ID ที่มีคำว่า IconImg และ export
+        // 5.1 หาปุ่ม Export Icon (รูปเครื่องพิมพ์/ส่งออก)
+        // ใช้ ID Suffix และ Title เพื่อความชัวร์
+        const iconSelectors = [
+            '[id$="_toptoolbar_export"]', 
+            'a[title="Export this report"]'
         ];
-
-        // เรียกฟังก์ชันค้นหาและคลิก (จะได้ Frame ที่เจอ กลับมาใช้งานต่อ)
-        const activeFrame = await findAndClickInFrames(page, exportSelectors);
-
-        if (!activeFrame) {
-            throw new Error("❌ FATAL: Could not find Export button in ANY frame after 60s.");
-        }
-
-        // 5.2 รอ Popup Dialog เด้งขึ้นมา
-        console.log('   Waiting for Export Dialog...');
-        await new Promise(r => setTimeout(r, 3000));
-
-        // 5.3 เลือก "Microsoft Excel Workbook Data-only"
-        // หา Dropdown ใน Frame เดิมที่เจอปุ่ม Export
-        const dropdownSelectors = [
-            '[id$="_dialog_combo"]', // ปุ่มเปิด Dropdown
-            'select'                 // หรือถ้าเป็น select ธรรมดา
-        ];
-
-        // พยายามเปิด Dropdown ก่อน
-        try {
-            const dropdownBtn = await activeFrame.$(dropdownSelectors[0]);
-            if (dropdownBtn) {
-                console.log('   Clicking Dropdown Arrow...');
-                await dropdownBtn.click();
-                await new Promise(r => setTimeout(r, 1000));
-            }
-        } catch(e) {}
-
-        // เลือกเมนู Excel (ใช้ XPath หา Text เอา ชัวร์สุด)
-        console.log('   Selecting Excel Data-only...');
-        const excelOptionXPath = "//*[contains(text(), 'Microsoft Excel Workbook Data-only')] | //*[contains(text(), 'Excel')]";
-        const excelOptions = await activeFrame.$x(excelOptionXPath);
-
-        if (excelOptions.length > 0) {
-            await excelOptions[0].click();
-        } else {
-            console.warn('⚠️ Text option not found, trying Fallback (Keyboard ArrowDown)...');
-            // ถ้าหาไม่เจอจริงๆ กดลูกศรลง 2 ทีแล้ว Enter (สูตรกันตาย)
-            await page.keyboard.press('ArrowDown');
-            await page.keyboard.press('ArrowDown');
-            await page.keyboard.press('Enter');
-        }
         
+        console.log('   1. Searching for Toolbar Export Icon...');
+        const iconFound = await findElementRecursive(page, iconSelectors);
+        
+        if (!iconFound) throw new Error("Could not find Toolbar Export Icon!");
+        
+        await iconFound.element.click();
+        const activeFrame = iconFound.frame; // จำ Frame ที่เจอไว้
+
+        // 5.2 รอ Dialog และหา Dropdown
+        console.log('   Waiting for Dialog...');
         await new Promise(r => setTimeout(r, 2000));
 
-        // 5.4 กดปุ่ม Export (ปุ่มยืนยันสุดท้าย)
-        const submitBtnSelector = '[id$="_dialog_submitBtn"]';
-        const submitBtn = await activeFrame.$(submitBtnSelector);
+        // คลิกเปิด Dropdown (ต้องคลิกปุ่มลูกศรเล็กๆ _dialog_combo)
+        console.log('   2. Clicking Dropdown Arrow...');
+        const dropdownSelectors = ['[id$="_dialog_combo"]'];
+        const dropdownFound = await findElementRecursive(page, dropdownSelectors, 5000); // หา 5 วิพอ
         
-        if (submitBtn) {
-            console.log('   Clicking Final Export Button...');
-            await submitBtn.click();
+        if (dropdownFound) {
+            await dropdownFound.element.click();
+            await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // 5.3 เลือก Excel Data-only
+        console.log('   3. Selecting Excel Data-only...');
+        // ใช้ XPath หา Text โดยตรง (ชัวร์สุดสำหรับเมนูแบบนี้)
+        const excelOption = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
+        
+        if (excelOption.length > 0) {
+            await excelOption[0].click();
         } else {
-            // ถ้าหาปุ่มไม่เจอ ลองกด Enter อีกทีเผื่อ Popup Active อยู่
-            console.warn('⚠️ Submit button not found, pressing Enter...');
+            console.warn('⚠️ Text option not found, using ArrowDown Fallback...');
+            await page.keyboard.press('ArrowDown');
+            await page.keyboard.press('ArrowDown');
             await page.keyboard.press('Enter');
+        }
+        await new Promise(r => setTimeout(r, 1000));
+
+        // 5.4 กดปุ่ม Export สุดท้าย (จุดที่เคย Error)
+        console.log('   4. Clicking Final Export Button...');
+        // ใช้ Selector ตาม HTML ที่คุณส่งมา: class="wizbutton" และ id ลงท้ายด้วย _dialog_submitBtn
+        const finalBtnSelectors = [
+            'a.wizbutton[id$="_dialog_submitBtn"]', 
+            'a[role="button"][id$="_dialog_submitBtn"]'
+        ];
+        
+        // ใช้ฟังก์ชัน Recursive หาอีกรอบ เผื่อ Dialog อยู่คนละ Frame
+        const finalBtnFound = await findElementRecursive(page, finalBtnSelectors);
+        
+        if (finalBtnFound) {
+            console.log('   ✅ Found Final Button! Clicking...');
+            await finalBtnFound.element.click();
+        } else {
+            throw new Error("Could not find Final Export Button (wizbutton)!");
         }
 
         // ---------------------------------------------------------
@@ -269,7 +240,8 @@ async function findAndClickInFrames(page, selectors) {
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        for (let i = 0; i < 90; i++) { // รอ 90 วินาที
+        // รอ 90 วินาที เผื่อ Server สร้างไฟล์ช้า
+        for (let i = 0; i < 90; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
                 const files = fs.readdirSync(downloadPath);
