@@ -19,19 +19,47 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: วนลูปหา Element ในทุก Frame (ใช้ XPath ได้ด้วย)
-async function findElementInFrames(page, selector, isXPath = false) {
-    const frames = [page, ...page.frames()];
-    for (const frame of frames) {
-        try {
-            const element = isXPath 
-                ? await frame.$x(selector) 
-                : await frame.$(selector);
-            
-            if (element && (isXPath ? element.length > 0 : element)) {
-                return { frame, element: isXPath ? element[0] : element };
+// 🛠️ ฟังก์ชันพิเศษ: พยายามหา Element ในทุก Frame โดยอัตโนมัติ (ฉลาดขึ้น)
+async function findAndClickInFrames(page, selectors) {
+    const startTime = Date.now();
+    const timeout = 60000; // ให้เวลาหา 60 วินาที
+
+    console.log('   🕵️‍♂️ Searching for button in all frames...');
+
+    while (Date.now() - startTime < timeout) {
+        // 1. ดึงรายชื่อ Frame ทั้งหมดใหม่ทุกรอบ (เผื่อมีการโหลด Iframe ใหม่)
+        const frames = page.frames();
+        
+        // 2. วนลูปหาในทุก Frame
+        for (const frame of frames) {
+            for (const selector of selectors) {
+                try {
+                    // ลองหา Element
+                    const element = await frame.$(selector);
+                    if (element) {
+                        // เช็คว่าปุ่มมองเห็นจริงไหม (Visible)
+                        const isVisible = await element.evaluate(el => {
+                            const style = window.getComputedStyle(el);
+                            return style && style.display !== 'none' && style.visibility !== 'hidden' && el.offsetParent !== null;
+                        });
+
+                        if (isVisible) {
+                            console.log(`   ✅ Found button! (Frame: ${frame.name() || 'unnamed'}, Selector: ${selector})`);
+                            
+                            // เลื่อนเมาส์ไปชี้ก่อน แล้วค่อยคลิก (ช่วยเรื่องปุ่ม Hover)
+                            await element.hover(); 
+                            await new Promise(r => setTimeout(r, 500));
+                            await element.click();
+                            return frame; // ส่งคืน Frame ที่เจอ เพื่อใช้ต่อ
+                        }
+                    }
+                } catch (e) {
+                    // Ignore errors (frame detached etc.)
+                }
             }
-        } catch (e) {}
+        }
+        // ถ้าไม่เจอ ให้รอ 2 วินาทีแล้วหาใหม่
+        await new Promise(r => setTimeout(r, 2000));
     }
     return null;
 }
@@ -151,10 +179,13 @@ async function findElementInFrames(page, selector, isXPath = false) {
         
         page = reportPage; 
         await page.bringToFront();
-        await page.setViewport({ width: 1280, height: 800 });
+        await page.setViewport({ width: 1366, height: 768 }); // จอใหญ่หน่อย
         
-        await new Promise(r => setTimeout(r, 5000)); // รอโหลดหน้า
+        // รอแบบ Hard Wait นานๆ เลย เพื่อให้ Crystal Report โหลด Iframe ครบ
+        console.log('   Waiting 10s for Crystal Report to load...');
+        await new Promise(r => setTimeout(r, 10000));
 
+        // Setup Download
         const reportClient = await page.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
             behavior: 'allow',
@@ -162,66 +193,65 @@ async function findElementInFrames(page, selector, isXPath = false) {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (แก้ใหม่: ใช้ Partial ID Matcher)
+        // 5. Crystal Report Export (The Hunt Begins!)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
-        // 5.1 หาปุ่ม Export Icon (ไอคอนรูปเครื่องพิมพ์/ส่งออก)
-        // ใช้ Selector จับ ID ที่ลงท้ายด้วย _toptoolbar_export (ตัดส่วนภาษาไทยทิ้ง)
-        const exportIconSelector = '[id$="_toptoolbar_export"]'; 
-        let found = null;
-        
-        console.log('   Searching for Export button...');
-        for (let i = 0; i < 30; i++) {
-            found = await findElementInFrames(page, exportIconSelector);
-            if (found) break;
-            await new Promise(r => setTimeout(r, 1000));
+        // รายชื่อตัวจับปุ่ม Export (ลองหลายๆ แบบ)
+        const exportSelectors = [
+            '[id$="_toptoolbar_export"]',          // จับ ID ส่วนท้าย (มาตรฐาน)
+            'a[title="Export this report"]',       // จับ Title ภาษาอังกฤษ
+            'img[alt="Export this report"]',       // จับ Alt ภาพ
+            'a[title*="Export"]',                  // จับ Title มีคำว่า Export
+            '[id*="IconImg"][id*="export"]'        // จับ ID ที่มีคำว่า IconImg และ export
+        ];
+
+        // เรียกฟังก์ชันค้นหาและคลิก (จะได้ Frame ที่เจอ กลับมาใช้งานต่อ)
+        const activeFrame = await findAndClickInFrames(page, exportSelectors);
+
+        if (!activeFrame) {
+            throw new Error("❌ FATAL: Could not find Export button in ANY frame after 60s.");
         }
 
-        if (!found) throw new Error("Could not find Export button (timeout)!");
-        
-        console.log('   Clicking Export Icon...');
-        await found.element.click();
-        const activeFrame = found.frame; // จำ Frame ที่เจอไว้ใช้ต่อ
-
-        // 5.2 รอ Popup และหาปุ่มเลือก Format
-        console.log('   Waiting for Dialog...');
-        await new Promise(r => setTimeout(r, 2000));
-
-        // พยายามหาปุ่ม Dropdown Arrow (Combo box)
-        // Selector: จับ ID ที่ลงท้ายด้วย _dialog_combo
-        const comboSelector = '[id$="_dialog_combo"]'; 
-        
-        // ลองคลิกที่ Combo box เพื่อเปิดเมนู (สำคัญ! ถ้าไม่คลิก ตัวเลือกอาจไม่โผล่)
-        try {
-            const comboBtn = await activeFrame.$(comboSelector);
-            if (comboBtn) {
-                console.log('   Clicking Dropdown Arrow...');
-                await comboBtn.click();
-                await new Promise(r => setTimeout(r, 1000));
-            }
-        } catch(e) { console.log('   (Combo button not found, trying direct search...)'); }
+        // 5.2 รอ Popup Dialog เด้งขึ้นมา
+        console.log('   Waiting for Export Dialog...');
+        await new Promise(r => setTimeout(r, 3000));
 
         // 5.3 เลือก "Microsoft Excel Workbook Data-only"
-        // ใช้ XPath หา text โดยตรง (แม่นยำที่สุดสำหรับ Custom Menu)
-        console.log('   Selecting Excel Data-only...');
-        const excelOptionXPath = "//*[contains(text(), 'Microsoft Excel Workbook Data-only')]";
-        const excelOption = await activeFrame.$x(excelOptionXPath);
+        // หา Dropdown ใน Frame เดิมที่เจอปุ่ม Export
+        const dropdownSelectors = [
+            '[id$="_dialog_combo"]', // ปุ่มเปิด Dropdown
+            'select'                 // หรือถ้าเป็น select ธรรมดา
+        ];
 
-        if (excelOption.length > 0) {
-            await excelOption[0].click();
+        // พยายามเปิด Dropdown ก่อน
+        try {
+            const dropdownBtn = await activeFrame.$(dropdownSelectors[0]);
+            if (dropdownBtn) {
+                console.log('   Clicking Dropdown Arrow...');
+                await dropdownBtn.click();
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        } catch(e) {}
+
+        // เลือกเมนู Excel (ใช้ XPath หา Text เอา ชัวร์สุด)
+        console.log('   Selecting Excel Data-only...');
+        const excelOptionXPath = "//*[contains(text(), 'Microsoft Excel Workbook Data-only')] | //*[contains(text(), 'Excel')]";
+        const excelOptions = await activeFrame.$x(excelOptionXPath);
+
+        if (excelOptions.length > 0) {
+            await excelOptions[0].click();
         } else {
-            console.warn('⚠️ Text option not found, trying Fallback (Keyboard)...');
-            // Fallback: กดลูกศรลงเรื่อยๆ
+            console.warn('⚠️ Text option not found, trying Fallback (Keyboard ArrowDown)...');
+            // ถ้าหาไม่เจอจริงๆ กดลูกศรลง 2 ทีแล้ว Enter (สูตรกันตาย)
             await page.keyboard.press('ArrowDown');
             await page.keyboard.press('ArrowDown');
             await page.keyboard.press('Enter');
         }
         
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 2000));
 
         // 5.4 กดปุ่ม Export (ปุ่มยืนยันสุดท้าย)
-        // Selector: จับ ID ที่ลงท้ายด้วย _dialog_submitBtn
         const submitBtnSelector = '[id$="_dialog_submitBtn"]';
         const submitBtn = await activeFrame.$(submitBtnSelector);
         
@@ -229,7 +259,9 @@ async function findElementInFrames(page, selector, isXPath = false) {
             console.log('   Clicking Final Export Button...');
             await submitBtn.click();
         } else {
-             throw new Error("Could not find Final Submit button!");
+            // ถ้าหาปุ่มไม่เจอ ลองกด Enter อีกทีเผื่อ Popup Active อยู่
+            console.warn('⚠️ Submit button not found, pressing Enter...');
+            await page.keyboard.press('Enter');
         }
 
         // ---------------------------------------------------------
@@ -237,7 +269,7 @@ async function findElementInFrames(page, selector, isXPath = false) {
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 90; i++) { // รอ 90 วินาที
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
                 const files = fs.readdirSync(downloadPath);
