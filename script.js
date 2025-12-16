@@ -177,61 +177,34 @@ const WEB_CONFIG = {
         console.log('      (Waiting 5s for Menu options...)');
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- Sequence 3: เลือก Excel Data-only ---
+                // --- Sequence 3: เลือก Excel Data-only ---
         console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
         for (let i = 0; i < 4; i++) {
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 8000)); // รอระหว่างกด Tab นานขึ้นนิดนึง
+            await new Promise(r => setTimeout(r, 800)); // รอ 0.8 วิ ระหว่างปุ่ม
         }
         await reportPage.keyboard.press('Enter');
         
-        // รอให้ระบบเลือกค่าเสร็จ (บางทีเลือกแล้วมันจะกระพริบโหลด)
-        console.log('      (Waiting 5s for selection confirmation...)');
-        await new Promise(r => setTimeout(r, 5000));
+        // [จุดสำคัญที่สุด] หลังจากเลือก Format หน้าเว็บจะกระตุก/โหลดใหม่
+        // ต้องรอตรงนี้นานๆ เพื่อให้แน่ใจว่า Sequence 4 จะไม่เริ่มตอนหน้าเว็บค้าง
+        console.log('      (Waiting 10s for selection to apply...)');
+        await new Promise(r => setTimeout(r, 10000)); 
+
+        // --- Sequence 4: กดปุ่ม Export (Tab x2 -> Enter) ---
+        console.log('   4. Clicking Export Button (Confirmed: Tab x2)...');
         
-        // --- Sequence 4: Smart Walk (Safe Mode) ---
-        console.log('   4. Searching for "Export" button...');
-        
-        let foundExport = false;
-        
-        // ลองกด Tab หาไม่เกิน 20 ครั้ง
-        for (let k = 1; k <= 20; k++) {
-            // 1. กด Tab
-            await reportPage.keyboard.press('Tab');
-            
-            // 2. รอให้หน้าเว็บหายกระตุก (เพิ่มเวลาจาก 0.5 เป็น 2 วินาที)
-            await new Promise(r => setTimeout(r, 2000)); 
+        // Tab ครั้งที่ 1
+        await reportPage.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 2000)); // รอ 2 วินาที (เผื่อเครื่องช้า)
 
-            // 3. ลองเช็คชื่อปุ่ม (ใส่ Try-Catch กัน Error)
-            let focusText = "";
-            try {
-                focusText = await reportPage.evaluate(() => {
-                    const el = document.activeElement;
-                    // อ่านค่า text, value, หรือ title ของปุ่ม
-                    return (el.innerText || el.value || el.getAttribute('title') || el.tagName || "").toLowerCase();
-                });
-            } catch (err) {
-                console.log(`      ⚠️ Browser busy at tab #${k}, skipping check...`);
-                continue; // ถ้า error ให้ข้ามไปกด Tab ต่อไปเลย
-            }
+        // Tab ครั้งที่ 2 (ถึงปุ่ม Export)
+        await reportPage.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 2000)); // รอ 2 วินาที (สำคัญ!)
 
-            console.log(`      [Tab #${k}] Focus is on: "${focusText}"`);
+        // กด Enter เพื่อ Export
+        console.log('      Pressing Enter to Start Download...');
+        await reportPage.keyboard.press('Enter');
 
-            // 4. เช็คว่าเจอเป้าหมายหรือยัง (เช็คคำว่า export, ok หรือปุ่มที่มีคำว่า save)
-            if (focusText && (focusText.includes('export') || focusText.includes('ok'))) {
-                console.log('      ✅ Found Target Button! Pressing Enter...');
-                await new Promise(r => setTimeout(r, 2000)); // พักหายใจ 2 วิ ก่อนเผด็จศึก
-                await reportPage.keyboard.press('Enter');
-                foundExport = true;
-                break; 
-            }
-        }
-
-        if (!foundExport) {
-            console.warn('      ⚠️ Could not find specific button. Trying blind Enter as fallback...');
-            // ถ้าหาไม่เจอจริงๆ ให้ลองเสี่ยงดวงกด Enter ไปเลย (เผื่อมันอยู่ที่ปุ่มแล้วแต่อ่านชื่อไม่ออก)
-            await reportPage.keyboard.press('Enter');
-                        }
         
         
         // ---------------------------------------------------------
