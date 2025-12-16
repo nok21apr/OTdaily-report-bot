@@ -19,6 +19,22 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
+// 🛠️ ฟังก์ชันพิเศษ: วนลูปหา Element ในทุก Frame (ทั้งหน้าหลักและ Iframe ย่อย)
+async function findElementInFrames(page, selector) {
+    // 1. ลองหาในหน้าหลักก่อน
+    try {
+        if (await page.$(selector)) return page;
+    } catch (e) {}
+
+    // 2. ถ้าไม่เจอ ให้วนหาในทุก Frame
+    for (const frame of page.frames()) {
+        try {
+            if (await frame.$(selector)) return frame;
+        } catch (e) {}
+    }
+    return null;
+}
+
 (async () => {
     const downloadPath = path.resolve(__dirname, 'downloads');
     if (!WEB_CONFIG.user || !WEB_CONFIG.pass) {
@@ -68,7 +84,6 @@ const WEB_CONFIG = {
         // 2. Navigation
         // ---------------------------------------------------------
         console.log('📂 Navigating to Report...');
-
         const imgLeaveSelector = '#ctl00_ContentPlaceHolder1_imgLeave';
         if (await page.$(imgLeaveSelector)) {
             await Promise.all([
@@ -77,15 +92,12 @@ const WEB_CONFIG = {
             ]);
         }
 
-        // เลือกเมนู รายงาน
         const parentMenuSelector = '#ctl00_Report_Menu > a';
         await page.waitForSelector(parentMenuSelector, { visible: true, timeout: 30000 });
         await page.click(parentMenuSelector);
         
-        // รอเมนูเลื่อนลงมา
         await new Promise(r => setTimeout(r, 1000));
 
-        // คลิกเมนูย่อย
         const subMenuSelector = '#ctl00_Report_Menu > ul a'; 
         await page.waitForSelector(subMenuSelector, { visible: true });
         await Promise.all([
@@ -96,54 +108,38 @@ const WEB_CONFIG = {
         console.log('✅ Arrived at Report Page.');
 
         // ---------------------------------------------------------
-        // 3. Fill Form & Date Logic (แก้ไขจุดที่มีปัญหา)
+        // 3. Fill Form & Date Logic
         // ---------------------------------------------------------
         console.log('📝 Filling form...');
+        await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype', { visible: true });
+        await page.select('#ctl00_ContentPlaceHolder1_ddlDoctype', '1');
         
-        // 3.1 เลือกประเภทเอกสาร
-        const docTypeSelector = '#ctl00_ContentPlaceHolder1_ddlDoctype';
-        await page.waitForSelector(docTypeSelector, { visible: true });
-        await page.select(docTypeSelector, '1');
-        
-        // 🛑 (จุดสำคัญ) รอให้หน้าเว็บโหลดใหม่ (PostBack) หลังจากเลือกค่าแรก
         console.log('   Waiting for page update...');
-        await new Promise(r => setTimeout(r, 3000)); // รอ 3 วินาทีให้ชัวร์
+        await new Promise(r => setTimeout(r, 3000));
 
-        // 3.2 เลือกประเภท OT
         const otTypeSelector = '#ctl00_ContentPlaceHolder1_ddlOt';
-        // เช็คก่อนว่ามี Dropdown นี้ไหม (บางทีเลือกเอกสารอื่นแล้วอันนี้หายไป)
         if (await page.$(otTypeSelector) !== null) {
             await page.select(otTypeSelector, '14');
-            await new Promise(r => setTimeout(r, 2000)); // รออีกรอบ
+            await new Promise(r => setTimeout(r, 2000));
         }
 
-        // 3.3 ใส่วันที่
         const now = new Date();
         const thaiYear = now.getFullYear() + 543;
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const firstDayValue = `01/${month}/${thaiYear}`;
         
         console.log(`📅 Setting date to: ${firstDayValue}`);
-        
         const dateInputSelector = '#ctl00_ContentPlaceHolder1_txtFromDate';
         await page.waitForSelector(dateInputSelector);
-        
-        // 🟢 ใช้วิธีล้างค่าด้วย JS (แม่นยำกว่าการคลิก)
         await page.$eval(dateInputSelector, el => el.value = '');
-        
-        // พิมพ์ค่าใหม่ลงไป
         await page.type(dateInputSelector, firstDayValue, { delay: 100 });
-        
-        // กด Tab เพื่อให้เว็บรู้ว่าเราพิมพ์เสร็จแล้ว (สำคัญมาก!)
         await page.keyboard.press('Tab');
 
         // ---------------------------------------------------------
         // 4. Generate Report
         // ---------------------------------------------------------
         console.log('⏳ Generating Report...');
-        
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
-        
         await page.click('#ctl00_ContentPlaceHolder1_lnkShowReport');
         
         const reportPage = await newPagePromise;
@@ -152,7 +148,11 @@ const WEB_CONFIG = {
         page = reportPage; 
         await page.bringToFront();
         await page.setViewport({ width: 1280, height: 800 });
+        
+        // รอให้หน้า Report โหลดเสร็จจริง ๆ
+        await new Promise(r => setTimeout(r, 5000));
 
+        // ตั้งค่า Download ให้หน้าใหม่
         const reportClient = await page.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
             behavior: 'allow',
@@ -160,32 +160,59 @@ const WEB_CONFIG = {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export
+        // 5. Crystal Report Export (แก้ปัญหา Iframe)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
-        const exportBtnSelector = 'a[title="Export this report"], img[alt="Export this report"]';
-        await page.waitForSelector(exportBtnSelector, { visible: true, timeout: 60000 });
-        await page.click(exportBtnSelector);
-
-        await page.waitForSelector('select', { visible: true });
+        // 5.1 หาปุ่ม Export Icon (อาจอยู่ใน Iframe)
+        const exportIconSelector = 'a[title="Export this report"], img[alt="Export this report"]';
+        let targetFrame = null;
         
-        const selectId = await page.evaluate(() => {
+        // วนรอจนกว่าจะเจอ Frame ที่มีปุ่ม Export (รอสูงสุด 60 วิ)
+        console.log('   Searching for Export button inside frames...');
+        for (let i = 0; i < 30; i++) {
+            targetFrame = await findElementInFrames(page, exportIconSelector);
+            if (targetFrame) break;
+            await new Promise(r => setTimeout(r, 2000)); // รอ 2 วิ แล้วหาใหม่
+        }
+
+        if (!targetFrame) throw new Error("Could not find Export button in any frame!");
+        
+        console.log('   Found Export button! Clicking...');
+        await targetFrame.click(exportIconSelector);
+
+        // 5.2 รอ Popup Dialog เด้งขึ้นมา
+        console.log('   Waiting for Export Dialog...');
+        await new Promise(r => setTimeout(r, 2000));
+
+        // 5.3 เลือก Microsoft Excel (Data-only)
+        // หา Dropdown ใน Frame เดิม (เพราะ Dialog มักอยู่ใน Frame เดียวกัน)
+        await targetFrame.waitForSelector('select', { timeout: 10000 });
+        
+        const selectId = await targetFrame.evaluate(() => {
             const options = Array.from(document.querySelectorAll('option'));
-            const target = options.find(o => o.text.includes('Microsoft Excel Workbook Data-only'));
+            // หา Option ที่มีคำว่า Data-only
+            const target = options.find(o => o.text.includes('Data-only') || o.text.includes('Excel'));
             return target ? target.parentElement.id : null;
         });
-        
+
         if (selectId) {
-            await page.select(`#${selectId}`, 'Microsoft Excel Workbook Data-only');
+            console.log(`   Selecting Excel Format (ID: ${selectId})...`);
+            await targetFrame.select(`#${selectId}`, 'Microsoft Excel Workbook Data-only');
         } else {
+            console.warn('⚠️ Could not find Excel option by text. Trying arrow keys...');
             await page.keyboard.press('ArrowDown');
         }
+        
         await new Promise(r => setTimeout(r, 1000));
 
-        const finalSubmitSelector = 'a[id$="_dialog_submitBtn"]';
-        await page.waitForSelector(finalSubmitSelector, { visible: true });
-        await page.click(finalSubmitSelector);
+        // 5.4 กดปุ่ม Export (ปุ่มยืนยันสุดท้าย)
+        // ใช้ Selector แบบลงท้ายด้วย _dialog_submitBtn (ตามรูปที่คุณส่งมา)
+        const submitBtnSelector = 'a[id$="_dialog_submitBtn"]';
+        await targetFrame.waitForSelector(submitBtnSelector, { visible: true });
+        
+        console.log('   Clicking Final Export Button...');
+        await targetFrame.click(submitBtnSelector);
 
         // ---------------------------------------------------------
         // 6. Wait for Download
