@@ -154,41 +154,41 @@ const WEB_CONFIG = {
 
         // คลิกที่ว่างๆ 1 ที เพื่อ Focus หน้าเว็บก่อนเริ่มกดปุ่ม
         try { await reportPage.click('body'); } catch(e) {}
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 10000));
 
         // --- Sequence 1: เปิด Dialog ---
         console.log('   1. Opening Dialog (Tab x2 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 5000));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 5000));
         await reportPage.keyboard.press('Enter');
         
         console.log('      (Waiting 3s for Dialog to appear...)');
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 30000));
 
         // --- Sequence 2: เข้าเมนูเลือกไฟล์ ---
         console.log('   2. Entering Format Menu (Tab x1 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 5000));
         await reportPage.keyboard.press('Enter');
         
         console.log('      (Waiting 2s for Menu options...)');
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 20000));
 
         // --- Sequence 3: เลือก Excel Data-only ---
         console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
         for (let i = 0; i < 4; i++) {
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 30000));
         }
         await reportPage.keyboard.press('Enter');
         
         console.log('      (Waiting 2s for selection...)');
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 20000));
 
         // --- Sequence 4: กดปุ่ม Export สุดท้าย ---
         console.log('   4. Clicking Export Button (Tab x2 -> Enter)...');
         for (let i = 0; i < 2; i++) {
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 300));
+            await new Promise(r => setTimeout(r, 3000));
         }
         await reportPage.keyboard.press('Enter');
 
