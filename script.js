@@ -167,7 +167,7 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await page.bringToFront();
         await page.setViewport({ width: 1366, height: 768 });
         
-        // รอให้ Report โหลด Iframe ครบ (15 วินาที เพื่อความชัวร์)
+        // รอให้ Report โหลด Iframe ครบ
         console.log('   Waiting 15s for Crystal Report Iframe...');
         await new Promise(r => setTimeout(r, 15000));
 
@@ -223,16 +223,15 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             await page.keyboard.press('ArrowDown');
             await page.keyboard.press('Enter');
         }
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 2000)); // 🔴 รอให้ค่าใน Dropdown เปลี่ยนเสร็จก่อน
 
         // 5.4 กดปุ่ม Export สุดท้าย (จุดที่เคย Error)
         console.log('   4. Clicking Final Export Button...');
         
-        // Selector 1: ปุ่ม Link จริง (a tag) ที่ลงท้ายด้วย _dialog_submitBtn (แม่นยำที่สุด)
-        // Selector 2: กรอบนอก (td tag) ที่คุณส่ง ID มา (fallback)
+        // Selector: ใช้ id ลงท้ายด้วย _dialog_submitBtn (ครอบคลุมทั้ง A และ TD ที่คุณส่งมา)
         const finalBtnSelectors = [
-            'a[id$="_dialog_submitBtn"]', 
-            '[id$="_dialog_submitBtn"]'
+            'a[id$="_dialog_submitBtn"]',  // ลองหาตัวปุ่มจริงก่อน
+            '[id$="_dialog_submitBtn"]'    // ถ้าไม่เจอ ลองหากรอบนอก (TD)
         ];
         
         // ใช้ฟังก์ชัน Recursive หาในทุก Frame
