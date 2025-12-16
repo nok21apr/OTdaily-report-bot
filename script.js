@@ -32,14 +32,22 @@ const WEB_CONFIG = {
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
     fs.mkdirSync(downloadPath);
 
-        const browser = await puppeteer.launch({
-        headless: "new",
-        protocolTimeout: 240000, // <--- เพิ่มบรรทัดนี้ครับ (4 นาที) ช่วยเรื่อง Time out ได้เยอะ
+    // เปิด Browser (แก้ headless: false ถ้าอยากดูในเครื่องตัวเอง)
+    const browser = await puppeteer.launch({
+        headless: "new", 
+        protocolTimeout: 300000, // เพิ่มความอึดเป็น 5 นาที
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
-
     let page = await browser.newPage();
+
+    // ฟังก์ชั่นช่วยถ่ายรูป (ตั้งชื่อตามลำดับเลข)
+    const takeSnap = async (p, name) => {
+        try {
+            console.log(`📸 Snap: ${name}`);
+            await p.screenshot({ path: name, fullPage: true });
+        } catch(e) { console.log('⚠️ Snap failed: ' + name); }
+    };
 
     try {
         await page.emulateTimezone('Asia/Bangkok');
@@ -59,6 +67,8 @@ const WEB_CONFIG = {
         console.log('🔑 Logging in...');
         await page.goto('https://leave.ttkasia.co.th/Login/Login.aspx', { waitUntil: 'networkidle2', timeout: 60000 });
         
+        await takeSnap(page, '01_login_page.png'); // 📸 1
+
         await page.waitForSelector('#txtUsername', { visible: true });
         await page.type('#txtUsername', WEB_CONFIG.user.trim(), { delay: 50 });
         await page.type('#txtPassword', WEB_CONFIG.pass.trim(), { delay: 50 });
@@ -68,6 +78,7 @@ const WEB_CONFIG = {
             page.keyboard.press('Enter')
         ]);
         console.log('✅ Login Success');
+        await takeSnap(page, '02_logged_in.png'); // 📸 2
 
         // ---------------------------------------------------------
         // 2. Navigation
@@ -94,6 +105,7 @@ const WEB_CONFIG = {
         ]);
 
         console.log('✅ Arrived at Report Page.');
+        await takeSnap(page, '03_arrived_report.png'); // 📸 3
 
         // ---------------------------------------------------------
         // 3. Fill Form & Date Logic (Fixed)
@@ -109,46 +121,37 @@ const WEB_CONFIG = {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // --- คำนวณวันที่ 1 ของเดือนปัจจุบัน (Logic เดิมถูกต้องแล้ว) ---
+        // วันที่
         const now = new Date();
-        const thaiYear = now.getFullYear() + 543; // ปี พ.ศ.
-        const month = String(now.getMonth() + 1).padStart(2, '0'); // เดือนปัจจุบัน
-        const firstDayValue = `01/${month}/${thaiYear}`; // เช่น 01/12/2568
+        const thaiYear = now.getFullYear() + 543;
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const firstDayValue = `01/${month}/${thaiYear}`;
         
         console.log(`📅 Setting date to: ${firstDayValue}`);
         const dateInputSelector = '#ctl00_ContentPlaceHolder1_txtFromDate';
         await page.waitForSelector(dateInputSelector);
         
-        // [แก้ใหม่] วิธีลบค่าเก่าที่ชัวร์กว่า (Click -> Ctrl+A -> Backspace)
-        await page.click(dateInputSelector); 
-        await new Promise(r => setTimeout(r, 500)); // รอแป๊บ
-        
-        await page.keyboard.down('Control');
-        await page.keyboard.press('A');
-        await page.keyboard.up('Control');
+        // ลบค่าเก่าแบบชัวร์ๆ
+        await page.click(dateInputSelector);
+        await new Promise(r => setTimeout(r, 500));
+        await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
         await page.keyboard.press('Backspace');
         
-        await new Promise(r => setTimeout(r, 500)); // รอให้ช่องว่างเปล่า
-
-        // พิมพ์ค่าใหม่ลงไป
+        // พิมพ์ค่าใหม่
         await page.type(dateInputSelector, firstDayValue, { delay: 100 });
+        await page.keyboard.press('Tab'); // ปิดปฏิทิน
+        await page.click('body'); // ย้ำปิดปฏิทิน
         
-        // กด Tab เพื่อปิดปฏิทิน
-        await page.keyboard.press('Tab');
-        
-        // (แถม) คลิกที่ว่าง 1 ที เพื่อปิดปฏิทินให้ชัวร์ (กันมันบังปุ่มอื่น)
-        await page.click('body');
-    
+        await takeSnap(page, '04_form_filled.png'); // 📸 4 เช็ควันที่ตรงนี้
+
         // ---------------------------------------------------------
         // 4. Generate Report & SWITCH TAB
         // ---------------------------------------------------------
         console.log('⏳ Generating Report...');
         
-        // เตรียมจับ Tab ใหม่
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
         await page.click('#ctl00_ContentPlaceHolder1_lnkShowReport');
         
-        // รอรับ Tab ใหม่
         const reportPage = await newPagePromise;
         if (!reportPage) throw new Error("Report tab did not open!");
         
@@ -156,11 +159,10 @@ const WEB_CONFIG = {
         await reportPage.bringToFront();
         await reportPage.setViewport({ width: 1366, height: 768 });
         
-        // รอโหลด (Hard Wait) 20 วินาที เพื่อให้แน่ใจว่า Crystal Report พร้อม
         console.log('   Waiting 20s for Crystal Report Iframe...');
         await new Promise(r => setTimeout(r, 20000));
+        await takeSnap(reportPage, '05_report_loaded.png'); // 📸 5 เช็คหน้า Report
 
-        // ตั้งค่า Download
         const reportClient = await reportPage.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
             behavior: 'allow',
@@ -168,73 +170,59 @@ const WEB_CONFIG = {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Strict Keyboard Sequence) - ADJUSTED
+        // 5. Crystal Report Export (Slow Sequence)
         // ---------------------------------------------------------
-        console.log('💾 Handling Crystal Report Export via Keyboard...');
-        
-        // คลิกที่ว่างๆ 1 ที เพื่อ Focus หน้าเว็บ
+        console.log('💾 Handling Crystal Report Export...');
         try { await reportPage.click('body'); } catch(e) {}
-        await new Promise(r => setTimeout(r, 2000)); // รอ 2 วินาทีให้ Focus นิ่ง
+        await new Promise(r => setTimeout(r, 2000));
 
-        // --- Sequence 1: เปิด Dialog ---
-        console.log('   1. Opening Dialog (Tab x2 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000)); // รอ 1 วิ
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000)); // รอ 1 วิ
+        // --- 1. Open Dialog ---
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
         await reportPage.keyboard.press('Enter');
-        
-        // [จุดสำคัญ] หน้าต่าง Dialog มักจะโหลดนาน ให้รอ 10 วินาที เพื่อความชัวร์
-        console.log('      (Waiting 10s for Dialog to fully appear...)');
-        await new Promise(r => setTimeout(r, 10000)); 
+        console.log('   Waiting 10s for Dialog...');
+        await new Promise(r => setTimeout(r, 10000));
+        await takeSnap(reportPage, '06_dialog_opened.png'); // 📸 6 เช็ค Dialog
 
-        // --- Sequence 2: เข้าเมนูเลือกไฟล์ ---
-        console.log('   2. Entering Format Menu (Tab x1 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 10000));
+        // --- 2. Menu ---
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
         await reportPage.keyboard.press('Enter');
-        
-        // รอเมนู Dropdown ไหลลงมา
-        console.log('      (Waiting 5s for Menu options...)');
         await new Promise(r => setTimeout(r, 5000));
+        await takeSnap(reportPage, '07_menu_list.png'); // 📸 7 เช็คเมนู
 
-                // --- Sequence 3: เลือก Excel Data-only ---
-        console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
+        // --- 3. Select Excel ---
         for (let i = 0; i < 4; i++) {
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 800)); // รอ 0.8 วิ ระหว่างปุ่ม
+            await new Promise(r => setTimeout(r, 600));
         }
         await reportPage.keyboard.press('Enter');
-        
-        // [จุดสำคัญที่สุด] หลังจากเลือก Format หน้าเว็บจะกระตุก/โหลดใหม่
-        // ต้องรอตรงนี้นานๆ เพื่อให้แน่ใจว่า Sequence 4 จะไม่เริ่มตอนหน้าเว็บค้าง
-        console.log('      (Waiting 10s for selection to apply...)');
-        await new Promise(r => setTimeout(r, 10000)); 
+        console.log('   Waiting 5s for format selection...');
+        await new Promise(r => setTimeout(r, 5000));
+        await takeSnap(reportPage, '08_format_selected.png'); // 📸 8 เช็คว่าเลือก Excel ถูกไหม
 
-        // --- Sequence 4: กดปุ่ม Export (Tab x2 -> Enter) ---
-        console.log('   4. Clicking Export Button (Confirmed: Tab x2)...');
-        
+        // --- 4. Final Export ---
+        console.log('   Ready for Final Export...');
         // Tab ครั้งที่ 1
-        await reportPage.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 2000)); // รอ 2 วินาที (เผื่อเครื่องช้า)
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1500));
+        // Tab ครั้งที่ 2 (ควรจะถึงปุ่ม Export)
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 2000));
+        
+        await takeSnap(reportPage, '09_final_focus.png'); // 📸 9 สำคัญมาก! ดูว่าโฟกัสอยู่ที่ปุ่มไหน
 
-        // Tab ครั้งที่ 2 (ถึงปุ่ม Export)
-        await reportPage.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 2000)); // รอ 2 วินาที (สำคัญ!)
-
-        // กด Enter เพื่อ Export
-        console.log('      Pressing Enter to Start Download...');
         await reportPage.keyboard.press('Enter');
 
-        
-        
         // ---------------------------------------------------------
         // 6. Wait for Download
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        // รอสูงสุด 5 นาที
         for (let i = 0; i < 300; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
                 const files = fs.readdirSync(downloadPath);
+                // Log ดูไฟล์ทุกไฟล์ที่เจอ
+                if (i % 10 === 0) console.log(`   Scanned files: ${JSON.stringify(files)}`); 
+                
                 downloadedFile = files.find(file => !file.endsWith('.crdownload') && (file.endsWith('.xls') || file.endsWith('.xlsx')));
                 if (downloadedFile) break;
             }
@@ -283,13 +271,12 @@ const WEB_CONFIG = {
 
     } catch (error) {
         console.error('❌ Error occurred:', error);
-        try {
-            if (page && !page.isClosed()) await page.screenshot({ path: 'error_main.png', fullPage: true });
-            const pages = await browser.pages();
-            if (pages.length > 1) await pages[pages.length-1].screenshot({ path: 'error_report.png', fullPage: true });
-        } catch(e){}
-
+        // ถ่ายรูปสุดท้ายตอน Error เผื่อไว้
+        if (page && !page.isClosed()) await page.screenshot({ path: '99_error_final.png', fullPage: true });
+        
         if (browser) await browser.close();
         process.exit(1);
     }
 })();
+
+    
