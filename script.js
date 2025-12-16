@@ -19,51 +19,16 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame (ใช้สำหรับ Dropdown และปุ่มสุดท้าย)
-async function findElementRecursive(page, selectors, timeout = 60000) {
-    const start = Date.now();
-    console.log(`   🕵️‍♂️ Searching for: ${selectors[0]}...`);
-    
-    while (Date.now() - start < timeout) {
-        const frames = page.frames();
-        for (const frame of frames) {
-            for (const selector of selectors) {
-                try {
-                    let el;
-                    if (selector.startsWith('//')) {
-                        const els = await frame.$x(selector);
-                        if (els.length > 0) el = els[0];
-                    } else {
-                        el = await frame.$(selector);
-                    }
-
-                    if (el) {
-                        const isVisible = await el.evaluate(e => {
-                            const style = window.getComputedStyle(e);
-                            return style && style.display !== 'none' && style.visibility !== 'hidden';
-                        });
-                        
-                        if (isVisible) {
-                            console.log(`   ✅ Found element in frame: "${frame.name() || 'unnamed'}"`);
-                            return { frame, element: el };
-                        }
-                    }
-                } catch (e) { }
-            }
-        }
-        await new Promise(r => setTimeout(r, 1000));
-    }
-    return null;
-}
-
 (async () => {
     const downloadPath = path.resolve(__dirname, 'downloads');
     
+    // ตรวจสอบค่า Config
     if (!WEB_CONFIG.user || !WEB_CONFIG.pass) {
-        console.error('❌ Error: Secrets incomplete.');
+        console.error('❌ Error: Secrets incomplete. Please check .env file.');
         process.exit(1);
     }
     
+    // เคลียร์ไฟล์เก่า
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
     fs.mkdirSync(downloadPath);
 
@@ -159,9 +124,11 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         // ---------------------------------------------------------
         console.log('⏳ Generating Report...');
         
+        // เตรียมจับ Tab ใหม่
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
         await page.click('#ctl00_ContentPlaceHolder1_lnkShowReport');
         
+        // รอรับ Tab ใหม่
         const reportPage = await newPagePromise;
         if (!reportPage) throw new Error("Report tab did not open!");
         
@@ -169,7 +136,7 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await reportPage.bringToFront();
         await reportPage.setViewport({ width: 1366, height: 768 });
         
-        // รอโหลด (Hard Wait)
+        // รอโหลด (Hard Wait) 20 วินาที เพื่อให้แน่ใจว่า Crystal Report พร้อม
         console.log('   Waiting 20s for Crystal Report Iframe...');
         await new Promise(r => setTimeout(r, 20000));
 
@@ -181,87 +148,57 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Strategy: Keyboard Navigation)
+        // 5. Crystal Report Export (Strict Keyboard Sequence)
         // ---------------------------------------------------------
-        console.log('💾 Handling Crystal Report Export...');
+        console.log('💾 Handling Crystal Report Export via Keyboard...');
 
-        // 5.1 เปิด Dialog ด้วยการกด Tab 2 ครั้ง + Enter (ตามคำแนะนำของคุณ)
-        console.log('   1. Activating Export Dialog via Keyboard (Tab x2 + Enter)...');
-        
-        // คลิกที่ว่างๆ 1 ทีเพื่อให้แน่ใจว่า Focus อยู่ที่หน้านี้
-        try { await reportPage.click('body'); } catch(e) {} 
+        // คลิกที่ว่างๆ 1 ที เพื่อ Focus หน้าเว็บก่อนเริ่มกดปุ่ม
+        try { await reportPage.click('body'); } catch(e) {}
         await new Promise(r => setTimeout(r, 1000));
 
-        // กด Tab ครั้งที่ 1
-        await reportPage.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 500));
-        
-        // กด Tab ครั้งที่ 2
-        await reportPage.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 500));
-        
-        // กด Enter (เพื่อกดปุ่ม Export this report)
+        // --- Sequence 1: เปิด Dialog ---
+        console.log('   1. Opening Dialog (Tab x2 -> Enter)...');
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
         await reportPage.keyboard.press('Enter');
-
-        // 5.2 รอ Dialog เด้ง
-        console.log('   Waiting for Dialog to open...');
+        
+        console.log('      (Waiting 3s for Dialog to appear...)');
         await new Promise(r => setTimeout(r, 3000));
 
-        // 5.3 กด Dropdown (ยังใช้วิธีหา Element เพราะ Dialog น่าจะขึ้นมาแล้ว)
-        console.log('   2. Clicking Dropdown Arrow...');
-        const dropdownSelectors = ['[id$="_dialog_combo"]'];
-        const dropdownFound = await findElementRecursive(reportPage, dropdownSelectors, 10000);
+        // --- Sequence 2: เข้าเมนูเลือกไฟล์ ---
+        console.log('   2. Entering Format Menu (Tab x1 -> Enter)...');
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await reportPage.keyboard.press('Enter');
         
-        if (dropdownFound) {
-            await dropdownFound.element.evaluate(el => el.click());
-            await new Promise(r => setTimeout(r, 1000));
-        } else {
-            console.warn('   ⚠️ Dropdown not found. Assuming keyboard focus is correct, proceeding...');
-        }
-
-        // 5.4 เลือก Excel Data-only
-        console.log('   3. Selecting Excel Data-only...');
-        // ใช้ XPath หา Text (ชัวร์สุด)
-        const activeFrame = dropdownFound ? dropdownFound.frame : reportPage; // หา Frame ที่เจอ Dropdown
-        let excelOption;
-        try {
-            const els = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
-            if (els.length > 0) excelOption = els[0];
-        } catch(e) {}
-
-        if (excelOption) {
-            await excelOption.click();
-        } else {
-            console.warn('   ⚠️ Option not found, using ArrowDown Fallback...');
-            await reportPage.keyboard.press('ArrowDown');
-            await reportPage.keyboard.press('ArrowDown');
-            await reportPage.keyboard.press('Enter');
-        }
+        console.log('      (Waiting 2s for Menu options...)');
         await new Promise(r => setTimeout(r, 2000));
 
-        // 5.5 กดปุ่ม Export สุดท้าย
-        console.log('   4. Clicking Final Export Button...');
-        const finalBtnSelectors = [
-            'a.wizbutton[id$="_dialog_submitBtn"]', 
-            '[id$="_dialog_submitBtn"]'
-        ];
-        
-        const finalBtnFound = await findElementRecursive(reportPage, finalBtnSelectors, 10000);
-        
-        if (finalBtnFound) {
-            console.log('   ✅ Found Final Button! Clicking...');
-            await finalBtnFound.element.evaluate(el => el.click());
-        } else {
-            console.warn('   ⚠️ Final Button not found. Pressing Enter as last resort...');
-            await reportPage.keyboard.press('Enter');
+        // --- Sequence 3: เลือก Excel Data-only ---
+        console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
+        for (let i = 0; i < 4; i++) {
+            await reportPage.keyboard.press('Tab');
+            await new Promise(r => setTimeout(r, 300));
         }
+        await reportPage.keyboard.press('Enter');
+        
+        console.log('      (Waiting 2s for selection...)');
+        await new Promise(r => setTimeout(r, 2000));
+
+        // --- Sequence 4: กดปุ่ม Export สุดท้าย ---
+        console.log('   4. Clicking Export Button (Tab x2 -> Enter)...');
+        for (let i = 0; i < 2; i++) {
+            await reportPage.keyboard.press('Tab');
+            await new Promise(r => setTimeout(r, 300));
+        }
+        await reportPage.keyboard.press('Enter');
 
         // ---------------------------------------------------------
         // 6. Wait for Download
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        for (let i = 0; i < 120; i++) { 
+        // รอสูงสุด 5 นาที
+        for (let i = 0; i < 300; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
                 const files = fs.readdirSync(downloadPath);
@@ -315,6 +252,8 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         console.error('❌ Error occurred:', error);
         try {
             if (page && !page.isClosed()) await page.screenshot({ path: 'error_main.png', fullPage: true });
+            const pages = await browser.pages();
+            if (pages.length > 1) await pages[pages.length-1].screenshot({ path: 'error_report.png', fullPage: true });
         } catch(e){}
 
         if (browser) await browser.close();
