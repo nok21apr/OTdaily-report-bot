@@ -2,16 +2,15 @@ name: Auto Export Report
 
 on:
   schedule:
-    # ตั้งเวลา Cron (หน่วยเป็น UTC)
-    # UTC 01:00 = Thailand 08:00
+    # รันตอน 8.00 น. เวลาไทย (01:00 UTC)
     - cron: '0 1 * * *' 
-  workflow_dispatch: # ปุ่มกดรันเอง (Manual Run)
+  workflow_dispatch: # ปุ่มกดรันเอง
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     
-    # ตั้งค่า Timezone ของเครื่อง Server ให้เป็นไทย
+    # ตั้งค่า Timezone Server เป็นไทย
     env:
       TZ: 'Asia/Bangkok' 
 
@@ -27,21 +26,20 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # ... (Steps ก่อนหน้า: Run Script) ...
-
       - name: Run Script
+        # 🟢 ส่วนที่แก้ไข: เพิ่ม WEB_USER และ WEB_PASS
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+          WEB_USER: ${{ secrets.WEB_USER }}   # <-- เพิ่มบรรทัดนี้
+          WEB_PASS: ${{ secrets.WEB_PASS }}   # <-- เพิ่มบรรทัดนี้
         run: node script.js
 
-      # -------------------------------------------------------------
-      # 📸 ส่วนที่เพิ่ม: อัปโหลดรูป Debug (จะทำงานเฉพาะตอน Error เท่านั้น)
-      # -------------------------------------------------------------
+      # อัปโหลดรูป Debug เมื่อเกิด Error เท่านั้น
       - name: Upload Debug Screenshot
-        if: failure() # บรรทัดนี้สำคัญ! บอกว่าให้ทำเฉพาะตอน "Script พัง"
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: error-screenshot
           path: error_screenshot.png
-          retention-days: 5 # เก็บไฟล์ไว้ 5 วันแล้วลบทิ้ง
+          retention-days: 5
