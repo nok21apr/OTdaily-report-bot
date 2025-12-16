@@ -188,7 +188,7 @@ const WEB_CONFIG = {
         await new Promise(r => setTimeout(r, 5000));
 
         // --- Sequence 4: กดปุ่ม Export สุดท้าย ---
-        console.log('   4. Clicking Export Button (Tab x4 -> Enter)...');
+        console.log('   4. Clicking Export Button (Tab x3 -> Enter)...');
         for (let i = 0; i < 3; i++) { // **ลองตรวจสอบว่าต้องกด Tab กี่ครั้งแน่ (2 หรือ 3)**
             await reportPage.keyboard.press('Tab');
             await new Promise(r => setTimeout(r, 800));
