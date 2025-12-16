@@ -40,11 +40,11 @@ jobs:
           WEB_PASS: ${{ secrets.WEB_PASS }}
         run: node script.js
 
-      # อัปโหลดรูป Debug เมื่อเกิด Error
-     - name: Upload Debug Screenshot
-  if: failure()
-  uses: actions/upload-artifact@v4
-  with:
-    name: error-screenshots
-    path: "error_report.png"   <-- แก้เป็นแบบนี้ หรือใส่ชื่อให้ตรงกับใน code js (error_report.png)
-    retention-days: 5
+       # อัปโหลดรูป Debug เมื่อเกิด Error
+      - name: Upload Debug Screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshot
+          path: error_screenshot.png
+          retention-days: 5
