@@ -19,17 +19,18 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame (จำเป็นมากสำหรับ Crystal Report)
+// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame แบบกัดไม่ปล่อย (Retry 60s)
 async function findElementRecursive(page, selectors, timeout = 60000) {
     const start = Date.now();
     console.log(`   🕵️‍♂️ Searching for: ${selectors[0]}...`);
     
     while (Date.now() - start < timeout) {
-        const frames = page.frames(); // ดึง Frame ทั้งหมดในหน้านั้น
+        const frames = page.frames();
         for (const frame of frames) {
             for (const selector of selectors) {
                 try {
                     let el;
+                    // แยกแยะระหว่าง XPath (//) และ CSS Selector
                     if (selector.startsWith('//')) {
                         const els = await frame.$x(selector);
                         if (els.length > 0) el = els[0];
@@ -38,18 +39,20 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
                     }
 
                     if (el) {
-                        // เช็คว่ามองเห็นจริงไหม
+                        // เช็คว่า Element มีอยู่จริงและไม่ถูกซ่อน
                         const isVisible = await el.evaluate(e => {
                             const style = window.getComputedStyle(e);
                             return style && style.display !== 'none' && style.visibility !== 'hidden';
                         });
                         
                         if (isVisible) {
-                            console.log(`   ✅ Found element in frame: "${frame.name() || 'unnamed'}"`);
+                            console.log(`   ✅ Found element in frame: "${frame.name() || 'unnamed'}" using selector: "${selector}"`);
                             return { frame, element: el };
                         }
                     }
-                } catch (e) { }
+                } catch (e) { 
+                    // ข้าม Error กรณี Frame ยังโหลดไม่เสร็จ
+                }
             }
         }
         await new Promise(r => setTimeout(r, 1000));
@@ -107,6 +110,7 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         // 2. Navigation
         // ---------------------------------------------------------
         console.log('📂 Navigating to Report...');
+        
         const imgLeaveSelector = '#ctl00_ContentPlaceHolder1_imgLeave';
         if (await page.$(imgLeaveSelector)) {
             await Promise.all([
@@ -127,7 +131,7 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             page.click(subMenuSelector)
         ]);
 
-        console.log('✅ Arrived at Report Form Page.');
+        console.log('✅ Arrived at Report Page.');
 
         // ---------------------------------------------------------
         // 3. Fill Form & Date Logic
@@ -156,17 +160,16 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await page.keyboard.press('Tab');
 
         // ---------------------------------------------------------
-        // 4. Generate Report (Logic จาก 1.txt + Fix)
+        // 4. Generate Report & SWITCH TAB
         // ---------------------------------------------------------
         console.log('⏳ Generating Report...');
         
-        // เตรียมจับ Tab ใหม่
+        // ดักจับหน้าต่างใหม่
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
         
-        // กดปุ่มแสดงรายงาน
         await page.click('#ctl00_ContentPlaceHolder1_lnkShowReport');
         
-        // รอรับ Tab ใหม่
+        // รอรับหน้าต่างใหม่
         const reportPage = await newPagePromise;
         if (!reportPage) throw new Error("Report tab did not open!");
         
@@ -174,6 +177,10 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await reportPage.bringToFront();
         await reportPage.setViewport({ width: 1366, height: 768 });
         
+        // รอให้หน้า Report โหลดและสร้าง Iframe (เพิ่มเวลาเป็น 20 วิ เพื่อความชัวร์)
+        console.log('   Waiting 20s for Crystal Report Iframe to load...');
+        await new Promise(r => setTimeout(r, 20000));
+
         // ตั้งค่า Download ให้หน้าใหม่
         const reportClient = await reportPage.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
@@ -181,45 +188,43 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             downloadPath: downloadPath
         });
 
-        // รอโหลด (Hard Wait เพื่อความชัวร์)
-        console.log('   Waiting 15s for Crystal Report Iframe...');
-        await new Promise(r => setTimeout(r, 15000));
-
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (ใช้ Recursive Search แทน waitForSelector)
+        // 5. Crystal Report Export (แก้ Selector ตามภาพที่ส่งมา)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
-        // 5.1 หาปุ่ม Export Icon (ใช้ Alt text แม่นยำสุด)
+        // 5.1 หาปุ่ม Export Icon (รูปเครื่องพิมพ์)
+        // 🔴 ใช้ Selector ตามภาพ: img tag ที่มี alt="Export this report"
         const iconSelectors = [
-            'img[alt="Export this report"]', // แม่นยำสุดจากภาพ HTML
-            '[id*="toptoolbar_export"]',     // จาก 1.txt
-            '[title="Export this report"]'
+            'img[alt="Export this report"]',        // แม่นยำที่สุด (ภาษาอังกฤษ + ตรง Tag)
+            '[title="Export this report"]',         // เผื่อไว้ (บางทีเป็น title)
+            '[id$="_toptoolbar_export"]',           // ตัวสำรอง (หาเฉพาะคำลงท้าย)
+            '[id*="IconImg_รายงาน"]'                // ตัวสุดท้าย (ภาษาไทย - ใช้เฉพาะจำเป็น)
         ];
         
         console.log('   1. Searching for Toolbar Export Icon...');
-        // ใช้ findElementRecursive แทน reportPage.waitForSelector (แก้ปัญหา Iframe)
+        
+        // ใช้เวลาหา 60 วินาที
         const iconFound = await findElementRecursive(reportPage, iconSelectors, 60000);
         
         if (!iconFound) {
-            // ถ่ายรูป Debug ถ้าหาไม่เจอ
-            await reportPage.screenshot({ path: 'debug_no_icon.png', fullPage: true });
-            throw new Error("Could not find Toolbar Export Icon in any frame!");
+            console.error('❌ Toolbar Icon NOT found. Please check screenshots.');
+            // ถ่ายรูปหน้าจอตอนหาไม่เจอไว้ดู
+            await reportPage.screenshot({ path: 'debug_not_found.png', fullPage: true });
+            throw new Error("Could not find Toolbar Export Icon!");
         }
         
+        // คลิกที่รูปภาพ
         await iconFound.element.evaluate(el => el.click());
-        const activeFrame = iconFound.frame; // จำ Frame ที่เจอไว้ใช้ต่อ
+        const activeFrame = iconFound.frame; 
 
-        // 5.2 รอ Dialog และหา Dropdown
+        // 5.2 รอ Dialog เด้ง
         console.log('   Waiting for Dialog...');
         await new Promise(r => setTimeout(r, 3000));
 
-        console.log('   2. Opening Format Dropdown...');
-        const dropdownSelectors = [
-            'div[id*="IconImg_Txt_iconMenu_icon"][id*="dialog_combo"]', // จาก 1.txt
-            '[id$="_dialog_combo"]'
-        ];
-        // ใช้ Recursive หาอีกรอบ เผื่อ Dialog เด้งไป Frame อื่น
+        // 5.3 คลิก Dropdown เพื่อเลือกไฟล์
+        console.log('   2. Clicking Dropdown Arrow...');
+        const dropdownSelectors = ['[id$="_dialog_combo"]'];
         const dropdownFound = await findElementRecursive(reportPage, dropdownSelectors, 10000);
         
         if (dropdownFound) {
@@ -227,17 +232,13 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
             await new Promise(r => setTimeout(r, 1000));
         }
 
-        // 5.3 เลือก Excel Data-only
+        // 5.4 เลือก Excel Data-only
         console.log('   3. Selecting Excel Data-only...');
-        // ใช้ XPath หา Text บน activeFrame (หรือหาใหม่ถ้า activeFrame หาย)
-        let excelOption;
-        try {
-            const els = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
-            if (els.length > 0) excelOption = els[0];
-        } catch(e) { }
-
-        if (excelOption) {
-            await excelOption.click();
+        // ใช้ XPath หา Text (ชัวร์สุดสำหรับ Crystal Report)
+        const excelOption = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
+        
+        if (excelOption.length > 0) {
+            await excelOption[0].click();
         } else {
             console.warn('⚠️ Text option not found, using ArrowDown Fallback...');
             await reportPage.keyboard.press('ArrowDown');
@@ -246,11 +247,10 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         }
         await new Promise(r => setTimeout(r, 2000));
 
-        // 5.4 กดปุ่ม Export สุดท้าย
+        // 5.5 กดปุ่ม Export สุดท้าย (ปุ่มล่างขวา)
         console.log('   4. Clicking Final Export Button...');
         const finalBtnSelectors = [
-            '//a[text()="Export"]',        // จาก 1.txt
-            'a.wizbutton[id$="_dialog_submitBtn"]',
+            'a.wizbutton[id$="_dialog_submitBtn"]', 
             '[id$="_dialog_submitBtn"]'
         ];
         
@@ -269,7 +269,8 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        for (let i = 0; i < 120; i++) { 
+        // รอ 5 นาที
+        for (let i = 0; i < 300; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
                 const files = fs.readdirSync(downloadPath);
@@ -323,6 +324,8 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         console.error('❌ Error occurred:', error);
         try {
             if (page && !page.isClosed()) await page.screenshot({ path: 'error_main.png', fullPage: true });
+            const pages = await browser.pages();
+            if (pages.length > 1) await pages[pages.length-1].screenshot({ path: 'error_report.png', fullPage: true });
         } catch(e){}
 
         if (browser) await browser.close();
