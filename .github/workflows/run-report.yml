@@ -39,12 +39,15 @@ jobs:
           WEB_USER: ${{ secrets.WEB_USER }}
           WEB_PASS: ${{ secrets.WEB_PASS }}
         run: node script.js
-
-       # อัปโหลดรูป Debug เมื่อเกิด Error
-      - name: Upload Debug Screenshot
-        if: failure()
+        
+      - name: Upload Debug Screenshots
+        if: always()   # <--- เปลี่ยนเป็น always() เพื่อให้ส่งรูปเสมอ ไม่ว่าจะ error หรือไม่
         uses: actions/upload-artifact@v4
         with:
-          name: error-screenshot
-          path: "*.png"
+          name: debug-cctv-images
+          path: "*.png"   # <--- เก็บทุกรูปที่มีนามสกุล .png
           retention-days: 5
+
+หลังจากรันเสร็จ ท่านจะเห็น Artifact ชื่อ `debug-cctv-images`
+
+       
