@@ -19,43 +19,6 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame (จำเป็นมากสำหรับ Crystal Report)
-async function findElementRecursive(page, selectors, timeout = 60000) {
-    const start = Date.now();
-    console.log(`   🕵️‍♂️ Searching for: ${selectors[0]}...`);
-    
-    while (Date.now() - start < timeout) {
-        const frames = page.frames();
-        for (const frame of frames) {
-            for (const selector of selectors) {
-                try {
-                    let el;
-                    if (selector.startsWith('//')) {
-                        const els = await frame.$x(selector);
-                        if (els.length > 0) el = els[0];
-                    } else {
-                        el = await frame.$(selector);
-                    }
-
-                    if (el) {
-                        const isVisible = await el.evaluate(e => {
-                            const style = window.getComputedStyle(e);
-                            return style && style.display !== 'none' && style.visibility !== 'hidden';
-                        });
-                        
-                        if (isVisible) {
-                            console.log(`   ✅ Found element in frame: "${frame.name() || 'unnamed'}"`);
-                            return { frame, element: el };
-                        }
-                    }
-                } catch (e) { }
-            }
-        }
-        await new Promise(r => setTimeout(r, 1000));
-    }
-    return null;
-}
-
 (async () => {
     const downloadPath = path.resolve(__dirname, 'downloads');
     
@@ -158,117 +121,97 @@ async function findElementRecursive(page, selectors, timeout = 60000) {
         await page.keyboard.press('Tab');
 
         // ---------------------------------------------------------
-        // 4. Generate Report & SWITCH TAB
+        // 4. Generate Report & 5. Export (Updated from 1.txt)
         // ---------------------------------------------------------
         console.log('⏳ Generating Report...');
         
-        // 🟢 เตรียมดักจับหน้าต่างใหม่ (New Tab)
+        // เตรียม Promise สำหรับหน้าต่างใหม่
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
         
         // กดปุ่มแสดงรายงาน
         await page.click('#ctl00_ContentPlaceHolder1_lnkShowReport');
-        
-        // 🟢 รอและสลับไปหน้าใหม่
-        const reportPage = await newPagePromise;
-        if (!reportPage) throw new Error("Report tab did not open!");
-        
-        console.log('✅ Switched to New Report Tab (ReportView.aspx)');
-        await reportPage.bringToFront();
-        await reportPage.setViewport({ width: 1366, height: 768 });
-        
-        // รอโหลดหน้าใหม่ (ใช้ catch เผื่อ timeout แต่หน้าโหลดเสร็จแล้ว)
-        try {
-            await reportPage.waitForNavigation({ waitUntil: 'networkidle0', timeout: 30000 });
-        } catch (e) {
-            console.log('   (Navigation wait completed or timeout, proceeding...)');
-        }
 
-        // Setup Download บนหน้าใหม่
+        // --- เริ่มต้นส่วนโค้ดจากไฟล์ 1.txt ---
+        
+        // 12. Select Window (Switch to new tab)
+        const reportPage = await newPagePromise;
+        if (!reportPage) throw new Error("Report tab did not open!"); // เพิ่มเช็คกันเหนียว
+        
+        await reportPage.bringToFront();
+        await reportPage.setViewport({ width: 1366, height: 768 }); // เพิ่มการตั้งขนาดจอให้ชัวร์
+
+        // Setup Download สำหรับหน้าใหม่ (สำคัญมาก)
         const reportClient = await reportPage.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
             behavior: 'allow',
             downloadPath: downloadPath
         });
 
-        // ---------------------------------------------------------
-        // 5. Crystal Report Export (Logic ใหม่ตามคำแนะนำของคุณ)
-        // ---------------------------------------------------------
-        console.log('💾 Handling Crystal Report Export...');
-
-        // 5.1 กดปุ่ม Toolbar (ใช้ ID Partial Match)
-        console.log('   1. Clicking Export Icon...');
-        const iconSelectors = [
-            '[id*="toptoolbar_export"]',  // ตามคำแนะนำของคุณ
-            '#IconImg_รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน_toptoolbar_export' // สำรอง (เต็มยศ)
-        ];
-        
-        const iconFound = await findElementRecursive(reportPage, iconSelectors, 60000);
-        if (!iconFound) throw new Error("Could not find Toolbar Export Icon!");
-        
-        await iconFound.element.evaluate(el => el.click());
-        const activeFrame = iconFound.frame; 
-
-        // 5.2 รอ Dialog และกด Dropdown
-        console.log('   Waiting for Dialog...');
-        await new Promise(r => setTimeout(r, 3000));
-
-        console.log('   2. Opening Format Dropdown...');
-        // ใช้ Selector แบบ Partial ID ตามที่คุณแนะนำ
-        const dropdownSelectors = [
-            'div[id*="IconImg_Txt_iconMenu_icon"][id*="dialog_combo"]', // ตามคำแนะนำ
-            '[id$="_dialog_combo"]' // สำรอง
-        ];
-        const dropdownFound = await findElementRecursive(reportPage, dropdownSelectors, 10000);
-        
-        if (dropdownFound) {
-            await dropdownFound.element.evaluate(el => el.click());
-            await new Promise(r => setTimeout(r, 1000));
+        // รอให้หน้า Report โหลดเสร็จ (สำคัญมาก เพราะ Crystal Report โหลดนาน)
+        // ใช้ try-catch เผื่อกรณี timeout แต่หน้าโหลดเสร็จแล้ว
+        try {
+            await reportPage.waitForNavigation({ waitUntil: 'networkidle0', timeout: 60000 }); // เพิ่ม timeout เป็น 60s
+        } catch (e) {
+            console.log('Navigation wait finished (or timed out), proceeding...');
         }
+        
+        console.log('Interacting with Report Viewer...');
+        
+        // 13. Click Export Icon
+        // Selector ต้นฉบับ: id=IconImg_รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน_toptoolbar_export
+        // เนื่องจากชื่อ ID ยาวและมีภาษาไทย ควรใช้ Attribute selector หรือ ID เต็มถ้ามั่นใจว่าไม่เปลี่ยน
+        console.log('13. Clicking Export Icon...');
+        const exportIconSelector = '[id*="toptoolbar_export"]'; // เลือกที่มีคำว่า toptoolbar_export
+        await reportPage.waitForSelector(exportIconSelector, { visible: true, timeout: 60000 });
+        await reportPage.click(exportIconSelector);
 
-        // 5.3 เลือก Excel Data-only (Item 14)
-        console.log('   3. Selecting Format (Excel Data-only)...');
+        // 14. Click Format Dropdown
+        // ต้นฉบับ: id=IconImg_Txt_iconMenu_icon_bobjid_1765873459217_dialog_combo
+        // ปัญหา: ID มีตัวเลข timestamp (1765873459217) ซึ่งจะเปลี่ยนตลอด
+        // แก้ไข: ใช้ Selector ที่จับ Pattern แทน
+        console.log('14. Opening Export Format Dialog...');
+        const formatDropdownSelector = 'div[id*="IconImg_Txt_iconMenu_icon"][id*="dialog_combo"]';
+        await reportPage.waitForSelector(formatDropdownSelector, { visible: true });
+        await reportPage.click(formatDropdownSelector);
+
+        // 15. Click Specific Format (Item 14)
+        // ต้นฉบับ: id=iconMenu_menu_bobjid_..._it_14
+        console.log('15. Selecting Export Format (it_14)...');
+        // สมมติว่าต้องการเลือก item ลำดับที่น่าจะเป็น Excel หรือ PDF (ในสคริปต์คือ it_14)
+        // พยายามหา Element ที่เป็น menu item และลงท้ายด้วย it_14
+        const formatItemSelector = 'span[id*="iconMenu_menu"][id*="it_14"]';
+        await reportPage.waitForSelector(formatItemSelector, { visible: true });
+        await reportPage.click(formatItemSelector);
+
+        // 16. Click Export Button (LinkText = Export)
+        console.log('16. Clicking Final Export...');
+        const exportBtnXpath = '//a[text()="Export"]';
         
-        // ใช้ Selector เจาะจงที่ลงท้ายด้วย _it_14 ตามที่คุณแนะนำและไฟล์ UI.Vision
-        const itemSelectors = [
-            'span[id*="iconMenu_menu"][id*="it_14"]', // ตามคำแนะนำ
-            '[id$="_it_14"]' // สำรอง
-        ];
-        
-        const formatItemFound = await findElementRecursive(reportPage, itemSelectors, 10000);
-        
-        if (formatItemFound) {
-            console.log('   ✅ Found format item (it_14). Clicking...');
-            await formatItemFound.element.evaluate(el => el.click());
-        } else {
-            console.warn('⚠️ Format item not found via ID. Trying Text Match...');
-            const excelOptionText = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
-            if (excelOptionText.length > 0) {
-                await excelOptionText[0].click();
+        // ใช้ waitForSelector กับ xpath (Puppeteer เวอร์ชันใหม่ๆ รองรับ xpath นำหน้าด้วย // หรือใช้ waitForXPath ถ้าเวอร์ชันเก่า)
+        try {
+            await reportPage.waitForSelector(`xpath/${exportBtnXpath}`, { visible: true });
+            const exportBtns = await reportPage.$$(`xpath/${exportBtnXpath}`);
+            if (exportBtns.length > 0) {
+                await exportBtns[0].click();
             } else {
-                console.warn('⚠️ Text match failed. Using ArrowDown Fallback...');
-                await reportPage.keyboard.press('ArrowDown');
-                await reportPage.keyboard.press('ArrowDown');
+                throw new Error("Export button not found via XPath selector");
+            }
+        } catch (e) {
+            // Fallback: ถ้าใช้ puppeteer รุ่นเก่าที่ต้องใช้ waitForXPath
+            try {
+                await reportPage.waitForXPath(exportBtnXpath, { visible: true });
+                const exportBtn = (await reportPage.$x(exportBtnXpath))[0];
+                await exportBtn.click();
+            } catch (ex) {
+                console.warn('Fallback click failed, trying Enter key...');
                 await reportPage.keyboard.press('Enter');
             }
         }
-        await new Promise(r => setTimeout(r, 2000));
 
-        // 5.4 กดปุ่ม Export สุดท้าย (LinkText = Export)
-        console.log('   4. Clicking Final Export Button...');
-        const finalBtnSelectors = [
-            '//a[text()="Export"]',       // ตามคำแนะนำ
-            'a[id$="_dialog_submitBtn"]'  // สำรอง
-        ];
-        
-        const finalBtnFound = await findElementRecursive(reportPage, finalBtnSelectors);
-        
-        if (finalBtnFound) {
-            console.log('   ✅ Found Final Button! Clicking...');
-            await finalBtnFound.element.evaluate(el => el.click());
-        } else {
-            console.warn('⚠️ Final Button not found. Pressing Enter as last resort...');
-            await reportPage.keyboard.press('Enter');
-        }
+        console.log('Done! Waiting a bit before closing...');
+        await new Promise(r => setTimeout(r, 5000));
+
+        // --- จบส่วนโค้ดจากไฟล์ 1.txt ---
 
         // ---------------------------------------------------------
         // 6. Wait for Download
