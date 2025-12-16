@@ -19,9 +19,11 @@ const WEB_CONFIG = {
     pass: process.env.WEB_PASS
 };
 
-// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame แบบกัดไม่ปล่อย
-async function findElementRecursive(page, selectors, timeout = 30000) {
+// 🛠️ ฟังก์ชันพิเศษ: ค้นหา Element ในทุก Frame แบบกัดไม่ปล่อย (Retry 60s)
+async function findElementRecursive(page, selectors, timeout = 60000) {
     const start = Date.now();
+    console.log(`   🕵️‍♂️ Searching for: ${selectors.join(', ')}`);
+    
     while (Date.now() - start < timeout) {
         const frames = page.frames();
         for (const frame of frames) {
@@ -30,8 +32,15 @@ async function findElementRecursive(page, selectors, timeout = 30000) {
                     const el = await frame.$(selector);
                     if (el) {
                         // เช็คว่ามองเห็นจริงไหม
-                        const box = await el.boundingBox();
-                        if (box) return { frame, element: el };
+                        const isVisible = await el.evaluate(e => {
+                            const style = window.getComputedStyle(e);
+                            return style && style.display !== 'none' && style.visibility !== 'hidden' && e.offsetParent !== null;
+                        });
+                        
+                        if (isVisible) {
+                            console.log(`   ✅ Found element in frame: ${frame.name() || 'unnamed'}`);
+                            return { frame, element: el };
+                        }
                     }
                 } catch (e) { }
             }
@@ -158,9 +167,9 @@ async function findElementRecursive(page, selectors, timeout = 30000) {
         await page.bringToFront();
         await page.setViewport({ width: 1366, height: 768 });
         
-        // Hard Wait: รอให้ Report โหลด Iframe ให้ครบก่อน (สำคัญมาก!)
-        console.log('   Waiting 10s for Crystal Report Iframe...');
-        await new Promise(r => setTimeout(r, 10000));
+        // รอให้ Report โหลด Iframe ครบ (15 วินาที เพื่อความชัวร์)
+        console.log('   Waiting 15s for Crystal Report Iframe...');
+        await new Promise(r => setTimeout(r, 15000));
 
         const reportClient = await page.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
@@ -169,12 +178,11 @@ async function findElementRecursive(page, selectors, timeout = 30000) {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Fixed Step)
+        // 5. Crystal Report Export (Final Fix)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export...');
 
         // 5.1 หาปุ่ม Export Icon (รูปเครื่องพิมพ์/ส่งออก)
-        // ใช้ ID Suffix และ Title เพื่อความชัวร์
         const iconSelectors = [
             '[id$="_toptoolbar_export"]', 
             'a[title="Export this report"]'
@@ -185,17 +193,18 @@ async function findElementRecursive(page, selectors, timeout = 30000) {
         
         if (!iconFound) throw new Error("Could not find Toolbar Export Icon!");
         
-        await iconFound.element.click();
+        // บังคับคลิกด้วย JS
+        await iconFound.element.evaluate(el => el.click());
         const activeFrame = iconFound.frame; // จำ Frame ที่เจอไว้
 
         // 5.2 รอ Dialog และหา Dropdown
         console.log('   Waiting for Dialog...');
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
 
-        // คลิกเปิด Dropdown (ต้องคลิกปุ่มลูกศรเล็กๆ _dialog_combo)
+        // คลิกเปิด Dropdown
         console.log('   2. Clicking Dropdown Arrow...');
         const dropdownSelectors = ['[id$="_dialog_combo"]'];
-        const dropdownFound = await findElementRecursive(page, dropdownSelectors, 5000); // หา 5 วิพอ
+        const dropdownFound = await findElementRecursive(page, dropdownSelectors, 5000);
         
         if (dropdownFound) {
             await dropdownFound.element.click();
@@ -204,7 +213,6 @@ async function findElementRecursive(page, selectors, timeout = 30000) {
 
         // 5.3 เลือก Excel Data-only
         console.log('   3. Selecting Excel Data-only...');
-        // ใช้ XPath หา Text โดยตรง (ชัวร์สุดสำหรับเมนูแบบนี้)
         const excelOption = await activeFrame.$x("//*[contains(text(), 'Microsoft Excel Workbook Data-only')]");
         
         if (excelOption.length > 0) {
@@ -215,24 +223,28 @@ async function findElementRecursive(page, selectors, timeout = 30000) {
             await page.keyboard.press('ArrowDown');
             await page.keyboard.press('Enter');
         }
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 2000));
 
         // 5.4 กดปุ่ม Export สุดท้าย (จุดที่เคย Error)
         console.log('   4. Clicking Final Export Button...');
-        // ใช้ Selector ตาม HTML ที่คุณส่งมา: class="wizbutton" และ id ลงท้ายด้วย _dialog_submitBtn
+        
+        // Selector 1: ปุ่ม Link จริง (a tag) ที่ลงท้ายด้วย _dialog_submitBtn (แม่นยำที่สุด)
+        // Selector 2: กรอบนอก (td tag) ที่คุณส่ง ID มา (fallback)
         const finalBtnSelectors = [
-            'a.wizbutton[id$="_dialog_submitBtn"]', 
-            'a[role="button"][id$="_dialog_submitBtn"]'
+            'a[id$="_dialog_submitBtn"]', 
+            '[id$="_dialog_submitBtn"]'
         ];
         
-        // ใช้ฟังก์ชัน Recursive หาอีกรอบ เผื่อ Dialog อยู่คนละ Frame
+        // ใช้ฟังก์ชัน Recursive หาในทุก Frame
         const finalBtnFound = await findElementRecursive(page, finalBtnSelectors);
         
         if (finalBtnFound) {
             console.log('   ✅ Found Final Button! Clicking...');
-            await finalBtnFound.element.click();
+            // ใช้ evaluate click เพื่อความชัวร์ (เหมือนคนกดผ่าน console)
+            await finalBtnFound.element.evaluate(el => el.click());
         } else {
-            throw new Error("Could not find Final Export Button (wizbutton)!");
+            console.warn('⚠️ Final Button not found by ID. Trying Enter key...');
+            await page.keyboard.press('Enter');
         }
 
         // ---------------------------------------------------------
@@ -240,7 +252,7 @@ async function findElementRecursive(page, selectors, timeout = 30000) {
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
-        // รอ 90 วินาที เผื่อ Server สร้างไฟล์ช้า
+        // รอ 90 วินาที
         for (let i = 0; i < 90; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
