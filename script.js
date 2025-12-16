@@ -9,7 +9,7 @@ const xlsx = require('xlsx');
 const EMAIL_CONFIG = {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_PASS,
-    to:   process.env.EMAIL_TO || 'naruesit_jit@ttkasia.co.th', // ใช้ค่าจาก .env หรือใส่ตรงนี้
+    to:   process.env.EMAIL_TO || 'naruesit_jit@ttkasia.co.th',
     subject: 'Daily Overtime Report (CSV)',
     text: 'Attached is the requested report in CSV UTF-8 format.'
 };
@@ -20,16 +20,14 @@ const WEB_CONFIG = {
 };
 
 (async () => {
-    // เตรียมโฟลเดอร์
     const downloadPath = path.resolve(__dirname, 'downloads');
     if (!WEB_CONFIG.user || !WEB_CONFIG.pass) {
-        console.error('❌ Error: Secrets incomplete. Check .env or GitHub Secrets.');
+        console.error('❌ Error: Secrets incomplete.');
         process.exit(1);
     }
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
     fs.mkdirSync(downloadPath);
 
-    // เปิด Browser
     const browser = await puppeteer.launch({
         headless: "new",
         args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -39,7 +37,6 @@ const WEB_CONFIG = {
 
     try {
         await page.emulateTimezone('Asia/Bangkok');
-        // ตั้งขนาดจอให้ใหญ่หน่อย เพื่อให้เมนูไม่ถูกย่อ
         await page.setViewport({ width: 1366, height: 768 }); 
 
         const client = await page.target().createCDPSession();
@@ -65,46 +62,32 @@ const WEB_CONFIG = {
             page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
             page.keyboard.press('Enter')
         ]);
-        console.log('✅ Login Success (Current URL: ' + page.url() + ')');
+        console.log('✅ Login Success');
 
         // ---------------------------------------------------------
-        // 2. Navigation (แก้ไขจุดที่ Error)
+        // 2. Navigation
         // ---------------------------------------------------------
         console.log('📂 Navigating to Report...');
 
-        // เช็คว่าต้องกดปุ่ม Leave ไอคอนใหญ่หรือไม่ (บางที Login แล้วข้ามหน้านี้ไปเลย)
         const imgLeaveSelector = '#ctl00_ContentPlaceHolder1_imgLeave';
-        const isImgLeaveVisible = await page.$(imgLeaveSelector);
-
-        if (isImgLeaveVisible) {
-            console.log('   Clicking Leave Icon...');
+        if (await page.$(imgLeaveSelector)) {
             await Promise.all([
                 page.waitForNavigation({ waitUntil: 'networkidle2' }),
                 page.click(imgLeaveSelector)
             ]);
-        } else {
-            console.log('   Leave Icon not found (Skipping...)');
         }
 
-        // --- ส่วนเลือกเมนู รายงาน ---
-        console.log('   Selecting Menu Report...');
+        // เลือกเมนู รายงาน
         const parentMenuSelector = '#ctl00_Report_Menu > a';
-        
-        // รอจนกว่าเมนู "รายงาน" จะโผล่มา
         await page.waitForSelector(parentMenuSelector, { visible: true, timeout: 30000 });
-        
-        // กดเมนูหลัก (รายงาน)
         await page.click(parentMenuSelector);
         
-        // 🟡 สำคัญ: รอ 1 วินาที ให้เมนูค่อยๆ เลื่อนลงมา (Animation)
+        // รอเมนูเลื่อนลงมา
         await new Promise(r => setTimeout(r, 1000));
 
         // คลิกเมนูย่อย
         const subMenuSelector = '#ctl00_Report_Menu > ul a'; 
-        console.log('   Clicking Sub-Menu...');
         await page.waitForSelector(subMenuSelector, { visible: true });
-        
-        // กดและรอหน้าเปลี่ยน
         await Promise.all([
             page.waitForNavigation({ waitUntil: 'networkidle2' }),
             page.click(subMenuSelector)
@@ -113,28 +96,46 @@ const WEB_CONFIG = {
         console.log('✅ Arrived at Report Page.');
 
         // ---------------------------------------------------------
-        // 3. Fill Form & Date Logic
+        // 3. Fill Form & Date Logic (แก้ไขจุดที่มีปัญหา)
         // ---------------------------------------------------------
         console.log('📝 Filling form...');
-        // รอให้ Dropdown โผล่มาก่อน
-        await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype', { visible: true, timeout: 30000 });
         
-        // เลือกประเภทเอกสาร = 1
-        await page.select('#ctl00_ContentPlaceHolder1_ddlDoctype', '1');
-        await new Promise(r => setTimeout(r, 500)); // พักนิดนึง
+        // 3.1 เลือกประเภทเอกสาร
+        const docTypeSelector = '#ctl00_ContentPlaceHolder1_ddlDoctype';
+        await page.waitForSelector(docTypeSelector, { visible: true });
+        await page.select(docTypeSelector, '1');
         
-        // เลือกประเภท OT = 14
-        await page.select('#ctl00_ContentPlaceHolder1_ddlOt', '14');
+        // 🛑 (จุดสำคัญ) รอให้หน้าเว็บโหลดใหม่ (PostBack) หลังจากเลือกค่าแรก
+        console.log('   Waiting for page update...');
+        await new Promise(r => setTimeout(r, 3000)); // รอ 3 วินาทีให้ชัวร์
 
-        // คำนวณวันที่
+        // 3.2 เลือกประเภท OT
+        const otTypeSelector = '#ctl00_ContentPlaceHolder1_ddlOt';
+        // เช็คก่อนว่ามี Dropdown นี้ไหม (บางทีเลือกเอกสารอื่นแล้วอันนี้หายไป)
+        if (await page.$(otTypeSelector) !== null) {
+            await page.select(otTypeSelector, '14');
+            await new Promise(r => setTimeout(r, 2000)); // รออีกรอบ
+        }
+
+        // 3.3 ใส่วันที่
         const now = new Date();
         const thaiYear = now.getFullYear() + 543;
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const firstDayValue = `01/${month}/${thaiYear}`;
         
-        console.log(`📅 Setting date: ${firstDayValue}`);
-        await page.click('#ctl00_ContentPlaceHolder1_txtFromDate', { clickCount: 3 });
-        await page.type('#ctl00_ContentPlaceHolder1_txtFromDate', firstDayValue);
+        console.log(`📅 Setting date to: ${firstDayValue}`);
+        
+        const dateInputSelector = '#ctl00_ContentPlaceHolder1_txtFromDate';
+        await page.waitForSelector(dateInputSelector);
+        
+        // 🟢 ใช้วิธีล้างค่าด้วย JS (แม่นยำกว่าการคลิก)
+        await page.$eval(dateInputSelector, el => el.value = '');
+        
+        // พิมพ์ค่าใหม่ลงไป
+        await page.type(dateInputSelector, firstDayValue, { delay: 100 });
+        
+        // กด Tab เพื่อให้เว็บรู้ว่าเราพิมพ์เสร็จแล้ว (สำคัญมาก!)
+        await page.keyboard.press('Tab');
 
         // ---------------------------------------------------------
         // 4. Generate Report
@@ -165,11 +166,8 @@ const WEB_CONFIG = {
 
         const exportBtnSelector = 'a[title="Export this report"], img[alt="Export this report"]';
         await page.waitForSelector(exportBtnSelector, { visible: true, timeout: 60000 });
-        
-        console.log('   Clicking Export Icon...');
         await page.click(exportBtnSelector);
 
-        // รอ Dropdown
         await page.waitForSelector('select', { visible: true });
         
         const selectId = await page.evaluate(() => {
@@ -181,12 +179,10 @@ const WEB_CONFIG = {
         if (selectId) {
             await page.select(`#${selectId}`, 'Microsoft Excel Workbook Data-only');
         } else {
-            console.warn('⚠️ Warning: Could not find option by text, trying arrow keys...');
             await page.keyboard.press('ArrowDown');
         }
         await new Promise(r => setTimeout(r, 1000));
 
-        // กดปุ่ม Export สุดท้าย
         const finalSubmitSelector = 'a[id$="_dialog_submitBtn"]';
         await page.waitForSelector(finalSubmitSelector, { visible: true });
         await page.click(finalSubmitSelector);
@@ -251,7 +247,6 @@ const WEB_CONFIG = {
         try {
             if (page && !page.isClosed()) {
                 await page.screenshot({ path: 'error_screenshot.png', fullPage: true });
-                console.log('📸 Debug screenshot saved: error_screenshot.png');
             }
         } catch (e) {}
 
