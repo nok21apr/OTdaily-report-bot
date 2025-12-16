@@ -187,13 +187,40 @@ const WEB_CONFIG = {
         console.log('      (Waiting 5s for selection confirmation...)');
         await new Promise(r => setTimeout(r, 5000));
 
-        // --- Sequence 4: กดปุ่ม Export สุดท้าย ---
-        console.log('   4. Clicking Export Button (Tab x4 -> Enter)...');
-        for (let i = 0; i < 4; i++) { // **ลองตรวจสอบว่าต้องกด Tab กี่ครั้งแน่ (2 หรือ 3)**
+        // --- Sequence 4: Smart Walk (เดินหาปุ่ม Export อัตโนมัติ) ---
+        console.log('   4. Searching for "Export" button...');
+        
+        let foundExport = false;
+        // จำกัดให้ลองกด Tab หาไม่เกิน 15 ครั้ง (กัน Loop ไม่รู้จบ)
+        for (let k = 1; k <= 15; k++) {
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 8000));
+            await new Promise(r => setTimeout(r, 500)); // รอขยับ
+
+            // สั่งให้บอท "อ่าน" ว่าตอนนี้ Focus อยู่ที่ปุ่มชื่ออะไร
+            const focusText = await reportPage.evaluate(() => {
+                const el = document.activeElement;
+                // อ่านค่า Text หรือ Value ของปุ่มที่ถูกเลือกอยู่
+                return el.innerText || el.value || el.getAttribute('title') || el.tagName;
+            });
+
+            console.log(`      [Tab #${k}] Focus is on: "${focusText}"`);
+
+            // เช็คว่าใช่ปุ่มที่เราอยากได้ไหม (คำว่า Export หรือ OK)
+            // หมายเหตุ: บางทีปุ่มอาจชื่อ "OK" หรือ "Export" ให้ลองสังเกต Log ดูครับ
+            if (focusText && (focusText.includes('Export') || focusText.includes('OK'))) {
+                console.log('      ✅ Found Target Button! Pressing Enter...');
+                await new Promise(r => setTimeout(r, 1000)); // พักหายใจก่อนกด
+                await reportPage.keyboard.press('Enter');
+                foundExport = true;
+                break; // เจอแล้ว หยุดกด Tab
+            }
         }
-        await reportPage.keyboard.press('Enter');
+
+        if (!foundExport) {
+            console.error('      ❌ Could not find "Export" button after 15 tabs.');
+            // สั่ง Screenshot หน้าจอมาดูหน่อยว่าทำไมหาไม่เจอ
+            await reportPage.screenshot({ path: 'debug_focus_failed.png' });
+        }
 
         // ---------------------------------------------------------
         // 6. Wait for Download
