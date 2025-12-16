@@ -13,16 +13,15 @@ const EMAIL_PASS = process.env.GMAIL_PASS;
 const EMAIL_TO = process.env.EMAIL_TO;
 
 (async () => {
-    console.log('🚀 Starting Bot (Business Plus Crystal Report)...');
+    console.log('🚀 Starting Bot (Business Plus - Fix Login Mode)...');
 
     // ตรวจสอบตัวแปรสำคัญ
     if (!WEB_USER || !WEB_PASS || !EMAIL_USER || !EMAIL_PASS) {
-        console.error('❌ Error: Secrets incomplete (Check .env or GitHub Secrets).');
+        console.error('❌ Error: Secrets incomplete.');
         process.exit(1);
     }
 
     const downloadPath = path.join(__dirname, 'downloads');
-    // เคลียร์โฟลเดอร์ดาวน์โหลดก่อนเริ่ม
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
     fs.mkdirSync(downloadPath);
 
@@ -32,7 +31,7 @@ const EMAIL_TO = process.env.EMAIL_TO;
     try {
         console.log('🖥️ Launching Browser...');
         browser = await puppeteer.launch({
-            headless: "new", // รันแบบไม่มีหน้าจอ
+            headless: "new",
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -44,7 +43,7 @@ const EMAIL_TO = process.env.EMAIL_TO;
 
         page = await browser.newPage();
         
-        // Timeout นานหน่อยเผื่อเว็บช้า
+        // Timeout 5 นาที
         page.setDefaultNavigationTimeout(300000);
         page.setDefaultTimeout(300000);
 
@@ -53,32 +52,64 @@ const EMAIL_TO = process.env.EMAIL_TO;
         await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadPath });
 
         // ---------------------------------------------------------
-        // Step 1: Login
+        // Step 1: Login (แก้ไขใหม่)
         // ---------------------------------------------------------
         console.log('1️⃣ Step 1: Login...');
         await page.goto('https://leave.ttkasia.co.th/Login/Login.aspx', { waitUntil: 'networkidle2' });
         
-        // รอช่อง User โผล่
+        // รอช่อง User
         await page.waitForSelector('#txtUsername', { visible: true });
         
-        // พิมพ์ User/Pass (ใช้ trim กันเหนียว)
-        await page.type('#txtUsername', WEB_USER.trim());
-        await page.type('#txtPassword', WEB_PASS.trim());
+        // พิมพ์ User/Pass
+        await page.type('#txtUsername', WEB_USER.trim(), { delay: 50 });
+        await page.type('#txtPassword', WEB_PASS.trim(), { delay: 50 });
         
-        console.log('   Clicking Login...');
+        console.log('   Clicking Login Button...');
+        
+        // 🛠️ FIX: คลิกปุ่ม Login แทนการกด Enter (หาปุ่มที่มีคำว่า submit หรือ id ที่น่าจะเป็นปุ่ม)
+        // ลองหา Selector ของปุ่ม Login (ส่วนใหญ่ Business Plus ใช้ #btnLogin หรือ input[type=submit])
+        const loginBtnSelector = '#btnLogin, input[type="submit"], button[type="submit"], a.wizbutton';
+        await page.waitForSelector(loginBtnSelector, { visible: true, timeout: 5000 }).catch(() => console.log("   Warning: Could not find explicit login button, trying Enter..."));
+
         await Promise.all([
-            page.waitForNavigation(),
-            page.keyboard.press('Enter')
+            page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }), // รอโหลดหน้าใหม่
+            (async () => {
+                // พยายามคลิกปุ่ม ถ้าหาไม่เจอให้กด Enter
+                const btn = await page.$(loginBtnSelector);
+                if (btn) {
+                    await btn.click();
+                } else {
+                    await page.keyboard.press('Enter');
+                }
+            })()
         ]);
-        console.log('✅ Login Success');
+
+        // 🔍 CHECK: ตรวจสอบว่า Login ผ่านจริงไหม?
+        const currentUrl = page.url();
+        console.log(`   Current URL: ${currentUrl}`);
+        
+        // ถ้า URL ยังเป็น Login.aspx แสดงว่าเข้าไม่ได้
+        if (currentUrl.includes('Login.aspx')) {
+            console.error('❌ Login Failed: ยังอยู่ที่หน้า Login');
+            await page.screenshot({ path: path.join(downloadPath, 'login_failed.png'), fullPage: true });
+            throw new Error('Login Failed - Still on login page');
+        }
+
+        console.log('✅ Login Success (Dashboard reached)');
 
         // ---------------------------------------------------------
         // Step 2: Navigate to Report
         // ---------------------------------------------------------
         console.log('2️⃣ Step 2: Go to Report Page...');
-        // คลิกเมนูหลัก
-        await page.waitForSelector('#ctl00_ContentPlaceHolder1_imgLeave', { visible: true });
-        await page.click('#ctl00_ContentPlaceHolder1_imgLeave');
+        
+        // คลิกเมนูหลัก (รอ selector นานหน่อยเผื่อหน้า Dashboard โหลดช้า)
+        const mainMenuSelector = '#ctl00_ContentPlaceHolder1_imgLeave';
+        try {
+            await page.waitForSelector(mainMenuSelector, { visible: true, timeout: 30000 });
+        } catch (e) {
+            throw new Error(`หาเมนูหลักไม่เจอ (${mainMenuSelector}) - อาจจะ Login ไม่สมบูรณ์`);
+        }
+        await page.click(mainMenuSelector);
         
         // คลิกเมนูรายงาน
         await page.waitForSelector('#ctl00_Report_Menu > a');
@@ -97,43 +128,34 @@ const EMAIL_TO = process.env.EMAIL_TO;
         // ---------------------------------------------------------
         console.log('3️⃣ Step 3: Fill Form...');
         
-        // เลือกประเภทเอกสาร และ OT
         await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype');
         await page.select('#ctl00_ContentPlaceHolder1_ddlDoctype', '1');
         await page.select('#ctl00_ContentPlaceHolder1_ddlOt', '14');
 
-        // คำนวณวันที่ 1 ของเดือนปัจจุบัน (พ.ศ.)
         const now = new Date();
         const thaiYear = now.getFullYear() + 543;
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const firstDayValue = `01/${month}/${thaiYear}`;
         
         console.log(`   Setting date to: ${firstDayValue}`);
-        // คลิก 3 ครั้งเพื่อเลือกข้อความเก่าทั้งหมดแล้วพิมพ์ทับ
         await page.click('#ctl00_ContentPlaceHolder1_txtFromDate', { clickCount: 3 });
         await page.type('#ctl00_ContentPlaceHolder1_txtFromDate', firstDayValue);
 
         // ---------------------------------------------------------
-        // Step 4: Generate Report & Handle New Tab
+        // Step 4: Generate Report
         // ---------------------------------------------------------
-        console.log('4️⃣ Step 4: Generating Report (Waiting for New Tab)...');
+        console.log('4️⃣ Step 4: Generating Report...');
         
-        // เตรียมจับ Event หน้าต่างใหม่ (สำคัญมากสำหรับ Crystal Report)
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
-        
-        // กดปุ่มแสดงรายงาน
         await page.click('#ctl00_ContentPlaceHolder1_lnkShowReport');
         
-        // รอรับหน้าต่างใหม่ที่เด้งขึ้นมา
         const reportPage = await newPagePromise;
         if (!reportPage) throw new Error("Report tab did not open!");
         
-        // สลับไปคุมหน้าใหม่
         page = reportPage; 
         await page.bringToFront();
         await page.setViewport({ width: 1920, height: 1080 });
         
-        // Setup Download behavior ให้หน้าใหม่ด้วย (ต้องทำซ้ำสำหรับ Tab ใหม่)
         const reportClient = await page.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
             behavior: 'allow',
@@ -143,20 +165,14 @@ const EMAIL_TO = process.env.EMAIL_TO;
         // ---------------------------------------------------------
         // Step 5: Export Handling
         // ---------------------------------------------------------
-        console.log('5️⃣ Step 5: Handling Crystal Report Export...');
+        console.log('5️⃣ Step 5: Handling Export...');
         
-        // รอจนปุ่ม Export โผล่ (Timeout 60 วิ เผื่อโหลดนาน)
         const exportBtnSelector = 'a[title="Export this report"], img[alt="Export this report"]';
         await page.waitForSelector(exportBtnSelector, { visible: true, timeout: 60000 });
-        
-        console.log('   Clicking Export Icon...');
         await page.click(exportBtnSelector);
 
-        // รอ Dropdown เลือก Format
         await page.waitForSelector('select', { visible: true });
         
-        // เลือก Microsoft Excel Workbook Data-only
-        // (ใช้ Logic หาจาก Text เพราะ ID เปลี่ยนได้)
         const selectId = await page.evaluate(() => {
             const options = Array.from(document.querySelectorAll('option'));
             const target = options.find(o => o.text.includes('Microsoft Excel Workbook Data-only'));
@@ -166,11 +182,9 @@ const EMAIL_TO = process.env.EMAIL_TO;
         if (selectId) {
             await page.select(`#${selectId}`, 'Microsoft Excel Workbook Data-only');
         } else {
-            console.warn('⚠️ Warning: Could not find option by text, trying arrow keys...');
             await page.keyboard.press('ArrowDown');
         }
 
-        // กดปุ่ม Export สุดท้าย (ใช้ Selector ที่ลงท้ายด้วย _dialog_submitBtn)
         const finalSubmitSelector = 'a[id$="_dialog_submitBtn"]';
         await page.waitForSelector(finalSubmitSelector);
         await page.click(finalSubmitSelector);
@@ -181,13 +195,10 @@ const EMAIL_TO = process.env.EMAIL_TO;
         console.log('6️⃣ Step 6: Waiting for file...');
         let downloadedFile = null;
         
-        // วนลูปรอเหมือนโค้ด DTC (รอสูงสุด 300 วินาที)
         for (let i = 0; i < 300; i++) {
             await new Promise(r => setTimeout(r, 1000));
             const files = fs.readdirSync(downloadPath);
-            // หาไฟล์ .xls/.xlsx ที่ไม่ใช่ .crdownload
             const target = files.find(f => (f.endsWith('.xlsx') || f.endsWith('.xls')) && !f.endsWith('.crdownload'));
-            
             if (target) {
                 downloadedFile = target;
                 break;
@@ -195,40 +206,27 @@ const EMAIL_TO = process.env.EMAIL_TO;
             if (i > 0 && i % 10 === 0) console.log(`   ...still waiting (${i}s)`);
         }
 
-        if (!downloadedFile) throw new Error('❌ Download Timeout: File never arrived.');
+        if (!downloadedFile) throw new Error('❌ Download Timeout.');
         const originalFilePath = path.join(downloadPath, downloadedFile);
         console.log(`✅ File Downloaded: ${originalFilePath}`);
 
-        // ปิด Browser ได้เลยเมื่อโหลดเสร็จ
         await browser.close();
-        browser = null; // reset variable
+        browser = null; 
 
         // ---------------------------------------------------------
-        // Step 7: Convert to CSV UTF-8
+        // Step 7: Convert & Email
         // ---------------------------------------------------------
-        console.log('🔄 Step 7: Converting to CSV UTF-8...');
+        console.log('🔄 Step 7: Converting & Emailing...');
         
-        // อ่านไฟล์ Excel
         const workbook = xlsx.readFile(originalFilePath);
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const csvContent = xlsx.utils.sheet_to_csv(worksheet);
         
-        // ตั้งชื่อไฟล์ใหม่ (.csv)
         const csvFileName = downloadedFile.replace(/\.[^/.]+$/, "") + ".csv";
         const csvFilePath = path.join(downloadPath, csvFileName);
 
-        // เขียนไฟล์ CSV โดยเติม \uFEFF (BOM) ข้างหน้า เพื่อให้อ่านภาษาไทยออก
         fs.writeFileSync(csvFilePath, '\uFEFF' + csvContent, { encoding: 'utf8' });
-        console.log(`✅ Converted to: ${csvFilePath}`);
 
-        // ลบไฟล์ Excel ต้นฉบับทิ้ง
-        fs.unlinkSync(originalFilePath);
-        console.log('🗑️ Deleted original Excel file');
-
-        // ---------------------------------------------------------
-        // Step 8: Email
-        // ---------------------------------------------------------
-        console.log('📧 Step 8: Sending Email...');
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: { user: EMAIL_USER, pass: EMAIL_PASS }
@@ -238,7 +236,7 @@ const EMAIL_TO = process.env.EMAIL_TO;
             from: `"Auto Report Bot" <${EMAIL_USER}>`,
             to: EMAIL_TO,
             subject: `รายงาน Business Plus - ${new Date().toLocaleDateString()}`,
-            text: `ดาวน์โหลดและแปลงไฟล์สำเร็จ\nไฟล์: ${csvFileName}`,
+            text: `ดาวน์โหลดสำเร็จ\nไฟล์: ${csvFileName}`,
             attachments: [{ filename: csvFileName, path: csvFilePath }]
         });
         
@@ -246,18 +244,12 @@ const EMAIL_TO = process.env.EMAIL_TO;
 
     } catch (error) {
         console.error('❌ FATAL ERROR:', error);
-        
-        // ถ่ายรูปตอน Error เก็บไว้ดู
         if (page && !page.isClosed()) {
             try { 
-                await page.screenshot({ 
-                    path: path.join(downloadPath, 'fatal_error.png'),
-                    fullPage: true 
-                });
+                await page.screenshot({ path: path.join(downloadPath, 'fatal_error.png'), fullPage: true });
                 console.log('📸 Screenshot saved: fatal_error.png');
             } catch(e){}
         }
-        
         if (browser) await browser.close();
         process.exit(1);
     }
