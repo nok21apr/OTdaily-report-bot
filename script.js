@@ -32,10 +32,12 @@ const WEB_CONFIG = {
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
     fs.mkdirSync(downloadPath);
 
-    const browser = await puppeteer.launch({
+        const browser = await puppeteer.launch({
         headless: "new",
+        protocolTimeout: 240000, // <--- เพิ่มบรรทัดนี้ครับ (4 นาที) ช่วยเรื่อง Time out ได้เยอะ
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
+
 
     let page = await browser.newPage();
 
@@ -186,42 +188,52 @@ const WEB_CONFIG = {
         // รอให้ระบบเลือกค่าเสร็จ (บางทีเลือกแล้วมันจะกระพริบโหลด)
         console.log('      (Waiting 5s for selection confirmation...)');
         await new Promise(r => setTimeout(r, 5000));
-
-        // --- Sequence 4: Smart Walk (เดินหาปุ่ม Export อัตโนมัติ) ---
+        
+        // --- Sequence 4: Smart Walk (Safe Mode) ---
         console.log('   4. Searching for "Export" button...');
         
         let foundExport = false;
-        // จำกัดให้ลองกด Tab หาไม่เกิน 15 ครั้ง (กัน Loop ไม่รู้จบ)
-        for (let k = 1; k <= 15; k++) {
+        
+        // ลองกด Tab หาไม่เกิน 20 ครั้ง
+        for (let k = 1; k <= 20; k++) {
+            // 1. กด Tab
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 500)); // รอขยับ
+            
+            // 2. รอให้หน้าเว็บหายกระตุก (เพิ่มเวลาจาก 0.5 เป็น 2 วินาที)
+            await new Promise(r => setTimeout(r, 2000)); 
 
-            // สั่งให้บอท "อ่าน" ว่าตอนนี้ Focus อยู่ที่ปุ่มชื่ออะไร
-            const focusText = await reportPage.evaluate(() => {
-                const el = document.activeElement;
-                // อ่านค่า Text หรือ Value ของปุ่มที่ถูกเลือกอยู่
-                return el.innerText || el.value || el.getAttribute('title') || el.tagName;
-            });
+            // 3. ลองเช็คชื่อปุ่ม (ใส่ Try-Catch กัน Error)
+            let focusText = "";
+            try {
+                focusText = await reportPage.evaluate(() => {
+                    const el = document.activeElement;
+                    // อ่านค่า text, value, หรือ title ของปุ่ม
+                    return (el.innerText || el.value || el.getAttribute('title') || el.tagName || "").toLowerCase();
+                });
+            } catch (err) {
+                console.log(`      ⚠️ Browser busy at tab #${k}, skipping check...`);
+                continue; // ถ้า error ให้ข้ามไปกด Tab ต่อไปเลย
+            }
 
             console.log(`      [Tab #${k}] Focus is on: "${focusText}"`);
 
-            // เช็คว่าใช่ปุ่มที่เราอยากได้ไหม (คำว่า Export หรือ OK)
-            // หมายเหตุ: บางทีปุ่มอาจชื่อ "OK" หรือ "Export" ให้ลองสังเกต Log ดูครับ
-            if (focusText && (focusText.includes('Export') || focusText.includes('OK'))) {
+            // 4. เช็คว่าเจอเป้าหมายหรือยัง (เช็คคำว่า export, ok หรือปุ่มที่มีคำว่า save)
+            if (focusText && (focusText.includes('export') || focusText.includes('ok'))) {
                 console.log('      ✅ Found Target Button! Pressing Enter...');
-                await new Promise(r => setTimeout(r, 1000)); // พักหายใจก่อนกด
+                await new Promise(r => setTimeout(r, 2000)); // พักหายใจ 2 วิ ก่อนเผด็จศึก
                 await reportPage.keyboard.press('Enter');
                 foundExport = true;
-                break; // เจอแล้ว หยุดกด Tab
+                break; 
             }
         }
 
         if (!foundExport) {
-            console.error('      ❌ Could not find "Export" button after 15 tabs.');
-            // สั่ง Screenshot หน้าจอมาดูหน่อยว่าทำไมหาไม่เจอ
-            await reportPage.screenshot({ path: 'debug_focus_failed.png' });
-        }
-
+            console.warn('      ⚠️ Could not find specific button. Trying blind Enter as fallback...');
+            // ถ้าหาไม่เจอจริงๆ ให้ลองเสี่ยงดวงกด Enter ไปเลย (เผื่อมันอยู่ที่ปุ่มแล้วแต่อ่านชื่อไม่ออก)
+            await reportPage.keyboard.press('Enter');
+                        }
+        
+        
         // ---------------------------------------------------------
         // 6. Wait for Download
         // ---------------------------------------------------------
