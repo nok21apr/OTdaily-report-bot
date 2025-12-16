@@ -1,0 +1,35 @@
+name: Auto Export Report
+
+on:
+  schedule:
+    # ตั้งเวลา Cron (หน่วยเป็น UTC)
+    # UTC 01:00 = Thailand 08:00
+    - cron: '0 1 * * *' 
+  workflow_dispatch: # ปุ่มกดรันเอง (Manual Run)
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    
+    # ตั้งค่า Timezone ของเครื่อง Server ให้เป็นไทย
+    env:
+      TZ: 'Asia/Bangkok' 
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Script
+        # ส่งค่ารหัสผ่านจาก Secrets เข้าไปใน Script
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+        run: node script.js
