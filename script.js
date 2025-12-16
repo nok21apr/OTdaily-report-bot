@@ -192,8 +192,27 @@ const EMAIL_CONFIG = {
         // 9. Cleanup Final File (Optional)
         // fs.unlinkSync(csvFilePath); 
         
+    // ... (ส่วนบนเหมือนเดิม) ...
+
     } catch (error) {
-        console.error('❌ Error:', error);
+        console.error('❌ Error occurred:', error);
+
+        // -------------------------------------------------------------
+        // 📸 ส่วนที่เพิ่ม: ถ่ายรูปหน้าจอตอน Error ไว้ดู
+        // -------------------------------------------------------------
+        try {
+            await page.screenshot({ 
+                path: 'error_screenshot.png', // ชื่อไฟล์รูป
+                fullPage: true                // ถ่ายทั้งหน้า (ยาวลงมาข้างล่างด้วย)
+            });
+            console.log('📸 Screenshot saved: error_screenshot.png');
+        } catch (snapshotError) {
+            console.error('Could not take screenshot:', snapshotError);
+        }
+        // -------------------------------------------------------------
+
         process.exit(1);
+    } finally {
+        await browser.close();
     }
 })();
