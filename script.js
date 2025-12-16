@@ -168,7 +168,7 @@ const WEB_CONFIG = {
 
         // --- Sequence 2: เข้าเมนูเลือกไฟล์ ---
         console.log('   2. Entering Format Menu (Tab x1 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 10000));
         await reportPage.keyboard.press('Enter');
         
         // รอเมนู Dropdown ไหลลงมา
@@ -179,7 +179,7 @@ const WEB_CONFIG = {
         console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
         for (let i = 0; i < 4; i++) {
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 800)); // รอระหว่างกด Tab นานขึ้นนิดนึง
+            await new Promise(r => setTimeout(r, 8000)); // รอระหว่างกด Tab นานขึ้นนิดนึง
         }
         await reportPage.keyboard.press('Enter');
         
@@ -188,10 +188,10 @@ const WEB_CONFIG = {
         await new Promise(r => setTimeout(r, 5000));
 
         // --- Sequence 4: กดปุ่ม Export สุดท้าย ---
-        console.log('   4. Clicking Export Button (Tab x3 -> Enter)...');
-        for (let i = 0; i < 3; i++) { // **ลองตรวจสอบว่าต้องกด Tab กี่ครั้งแน่ (2 หรือ 3)**
+        console.log('   4. Clicking Export Button (Tab x4 -> Enter)...');
+        for (let i = 0; i < 4; i++) { // **ลองตรวจสอบว่าต้องกด Tab กี่ครั้งแน่ (2 หรือ 3)**
             await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 800));
+            await new Promise(r => setTimeout(r, 8000));
         }
         await reportPage.keyboard.press('Enter');
 
