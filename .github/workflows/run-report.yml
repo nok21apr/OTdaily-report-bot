@@ -46,8 +46,4 @@ jobs:
         with:
           name: debug-cctv-images
           path: "*.png"   # <--- เก็บทุกรูปที่มีนามสกุล .png
-          retention-days: 5
-
-หลังจากรันเสร็จ ท่านจะเห็น Artifact ชื่อ `debug-cctv-images`
-
-       
+          retention-days: 5    
