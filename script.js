@@ -50,7 +50,7 @@ const WEB_CONFIG = {
 
     try {
         await page.emulateTimezone('Asia/Bangkok');
-        // ปรับ Viewport ตาม Code ที่ท่านให้มา (928x791)
+        // ปรับ Viewport ตาม Code ที่ท่านบันทึกมา (928x791)
         await page.setViewport({ width: 928, height: 791 }); 
 
         const client = await page.target().createCDPSession();
@@ -78,9 +78,10 @@ const WEB_CONFIG = {
         console.log('✅ Login Success');
 
         // ---------------------------------------------------------
-        // 2. Navigation
+        // 2. Navigation (Original Method)
         // ---------------------------------------------------------
-        console.log('📂 Navigating to Report...');
+        console.log('📂 Navigating to Report (Original Method)...');
+        
         const imgLeaveSelector = '#ctl00_ContentPlaceHolder1_imgLeave';
         if (await page.$(imgLeaveSelector)) {
             await Promise.all([
@@ -102,57 +103,77 @@ const WEB_CONFIG = {
         ]);
 
         console.log('✅ Arrived at Report Page.');
-
+        await takeSnap('03_arrived_report.png');
 
         // ---------------------------------------------------------
-        // 3. Fill Form (New Logic from Recorder)
+        // 3. Fill Form (UPDATED: From "เลือกวันที่overtimereport.txt")
         // ---------------------------------------------------------
-        console.log('📝 Filling form (Recorder Sequence)...');
+        console.log('📝 Filling form using updated recorder logic...');
         
-        // 3.1 Select Doctype = 1
+        // --- 3.1 Select Doctype = 1 ---
         const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
         await page.waitForSelector(ddlDoctype);
+        // เลียนแบบการคลิกที่พิกัด x: 277, y: 13
+        await page.click(ddlDoctype, { offset: { x: 277, y: 13 } });
+        await new Promise(r => setTimeout(r, 500));
         await page.select(ddlDoctype, '1');
-        await new Promise(r => setTimeout(r, 1000));
 
-        // 3.2 Select OT = 14
+        // --- 3.2 Select OT = 14 ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
+            // เลียนแบบการคลิกที่พิกัด x: 242, y: 18
+            await page.click(ddlOt, { offset: { x: 242, y: 18 } });
+            await new Promise(r => setTimeout(r, 500));
             await page.select(ddlOt, '14');
-            await new Promise(r => setTimeout(r, 1000));
         }
 
-        // 3.3 Date Input Sequence (Clear -> Type '1' -> Tab)
-        console.log('   Handling Date Input...');
-        const dateInputSelector = '#ctl00_ContentPlaceHolder1_txtFromDate';
-        await page.waitForSelector(dateInputSelector);
+        // --- 3.3 FROM Date Input Sequence ---
+        console.log('   Handling "From Date" Input...');
+        const fromDateSelector = '#ctl00_ContentPlaceHolder1_txtFromDate';
+        await page.waitForSelector(fromDateSelector);
 
-        // Click to focus
-        await page.click(dateInputSelector);
+        // Click Offset x: 128, y: 18
+        await page.click(fromDateSelector, { offset: { x: 128, y: 18 } });
         await new Promise(r => setTimeout(r, 500));
 
-        // Backspace loop (เลียนแบบการกด Backspace รัวๆ ตาม Code ที่ให้มา)
+        // Backspace loop (15 times)
+        console.log('      Clearing From Date (Backspace x15)...');
         for(let i=0; i<15; i++) {
             await page.keyboard.press('Backspace');
         }
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 300));
 
         // Type '1'
-        console.log("   Typing '1'...");
-        await page.keyboard.type('1');
-        await new Promise(r => setTimeout(r, 500));
+        console.log("      Typing '1'...");
+        await page.keyboard.press('1');
+        await new Promise(r => setTimeout(r, 300));
 
         // Press Tab
-        console.log("   Pressing Tab...");
+        console.log("      Pressing Tab...");
         await page.keyboard.press('Tab');
         await new Promise(r => setTimeout(r, 1000));
 
-        // Click elsewhere to finalize/close calendar (เลียนแบบการคลิก offset อื่นๆ ใน code เดิม)
-        // การคลิกที่ว่าง (body) ปลอดภัยสุด
-        await page.click('body');
+
+        // --- 3.4 TO Date Input Sequence (NEW ADDITION) ---
+        console.log('   Handling "To Date" Input...');
+        const toDateSelector = '#ctl00_ContentPlaceHolder1_txtToDate';
+        // Click Offset x: 185, y: 14
+        await page.click(toDateSelector, { offset: { x: 185, y: 14 } });
+        await new Promise(r => setTimeout(r, 500));
+
+        // Backspace loop (4 times)
+        console.log('      Clearing To Date (Backspace x4)...');
+        for(let i=0; i<4; i++) {
+            await page.keyboard.press('Backspace');
+        }
+        await new Promise(r => setTimeout(r, 300));
+
+        // Press Tab
+        console.log("      Pressing Tab...");
+        await page.keyboard.press('Tab');
         await new Promise(r => setTimeout(r, 1000));
         
-        await takeSnap('04_form_filled_recorder.png');
+        await takeSnap('04_form_filled_updated.png');
 
         // ---------------------------------------------------------
         // 4. Generate Report (Click Show Report)
@@ -162,10 +183,10 @@ const WEB_CONFIG = {
         // เตรียมจับ Tab ใหม่
         const newPagePromise = new Promise(x => browser.once('targetcreated', target => x(target.page())));
         
-        // คลิกปุ่มแสดงรายงาน (ใช้ Selector จาก Code ที่ให้มา)
+        // คลิกปุ่มแสดงรายงาน (Offset x: 65, y: 16)
         const showReportBtn = '#ctl00_ContentPlaceHolder1_lnkShowReport';
         await page.waitForSelector(showReportBtn);
-        await page.click(showReportBtn);
+        await page.click(showReportBtn, { offset: { x: 65, y: 16 } });
         
         console.log('   Click command sent. Waiting for tab...');
         
@@ -174,7 +195,7 @@ const WEB_CONFIG = {
         
         console.log('✅ Switched to New Report Tab');
         await reportPage.bringToFront();
-        await reportPage.setViewport({ width: 928, height: 791 }); // ใช้ขนาดตาม snippet
+        await reportPage.setViewport({ width: 928, height: 791 }); 
         
         // รอโหลด Crystal Report
         console.log('   Waiting 20s for Crystal Report Iframe...');
@@ -188,7 +209,7 @@ const WEB_CONFIG = {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Final Sequence)
+        // 5. Crystal Report Export (Final Sequence - Tab x2)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export via Keyboard...');
 
