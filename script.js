@@ -209,45 +209,55 @@ const WEB_CONFIG = {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Final Sequence - Tab x2)
+        // 5. Crystal Report Export (UPDATED: From "เลือกdowload.txt")
         // ---------------------------------------------------------
-        console.log('💾 Handling Crystal Report Export via Keyboard...');
+        console.log('💾 Handling Crystal Report Export (New Recorder Sequence)...');
 
-        try { await reportPage.click('body'); } catch(e) {}
+        // 1. คลิกไอคอน Export (รูปเครื่องพิมพ์/ส่งออก)
+        console.log('   1. Clicking Export Icon...');
+        const exportIconSelector = '[id$="_toptoolbar_export"]'; // Selector แบบยืดหยุ่น (Ends with)
+        try {
+            await reportPage.waitForSelector(exportIconSelector, { timeout: 10000 });
+            await reportPage.click(exportIconSelector, { offset: { x: 5, y: 7 } });
+        } catch (e) {
+            console.log('      ⚠️ Standard selector failed, trying aria-label...');
+            // สำรอง: หาจาก Aria Label หรือ ID เต็มๆ จากไฟล์ recorder
+            await reportPage.click('#IconImg_รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน_toptoolbar_export');
+        }
+        await new Promise(r => setTimeout(r, 2000)); // รอ Dialog เด้ง
+
+        // 2. Keyboard Navigation (Tab -> Enter -> Tab x3 -> Enter)
+        console.log('   2. Navigating Export Options (Tab/Enter Sequence)...');
+        
+        // Tab -> Enter (เปิด List Format?)
+        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await reportPage.keyboard.press('Enter'); await new Promise(r => setTimeout(r, 2000));
+
+        // Tab x3 (เลือก Excel Data Only?)
+        for(let i=0; i<3; i++) {
+            await reportPage.keyboard.press('Tab');
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        // Enter (ยืนยัน Format)
+        await reportPage.keyboard.press('Enter');
         await new Promise(r => setTimeout(r, 2000));
 
-        // Sequence 1: Dialog
-        console.log('   1. Opening Dialog (Tab x2 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
-        await reportPage.keyboard.press('Enter');
-        await new Promise(r => setTimeout(r, 10000));
-
-        // Sequence 2: Menu
-        console.log('   2. Entering Format Menu (Tab x1 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
-        await reportPage.keyboard.press('Enter');
-        await new Promise(r => setTimeout(r, 5000));
-
-        // Sequence 3: Excel
-        console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
-        for (let i = 0; i < 4; i++) {
-            await reportPage.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 600));
+        // 3. คลิกปุ่ม Export Final Submit
+        console.log('   3. Clicking Final Export Button...');
+        // ใช้ Selector ที่ลงท้ายด้วย _dialog_submitBtn (เพราะตัวเลขตรงกลาง 1765... จะเปลี่ยนไปเรื่อยๆ)
+        const submitBtnSelector = '[id$="_dialog_submitBtn"]'; 
+        
+        try {
+            await reportPage.waitForSelector(submitBtnSelector, { timeout: 10000 });
+            await reportPage.click(submitBtnSelector, { offset: { x: 12, y: 1 } });
+        } catch (e) {
+             console.log('      ⚠️ Submit button selector failed, trying fallback...');
+             // Fallback: ลองกด Enter เผื่อ Focus อยู่ที่ปุ่มแล้ว
+             await reportPage.keyboard.press('Enter');
         }
-        await reportPage.keyboard.press('Enter');
-        await new Promise(r => setTimeout(r, 10000)); 
-
-        // Sequence 4: Export Button
-        console.log('   4. Clicking Export Button (Tab x2 -> Enter)...');
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1500));
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 2000));
-
-        console.log('      📸 Snap check_focus.png before Enter...');
-        try { await reportPage.screenshot({ path: 'check_focus.png', fullPage: true }); } catch(e){}
-
-        console.log('      Pressing Enter to Download...');
-        await reportPage.keyboard.press('Enter');
+        
+        console.log('      Export sequence completed. Waiting for download...');
 
         // ---------------------------------------------------------
         // 6. Wait for Download
