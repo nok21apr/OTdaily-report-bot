@@ -113,18 +113,24 @@ const WEB_CONFIG = {
         // --- 3.1 Select Doctype = 1 ---
         const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
         await page.waitForSelector(ddlDoctype);
-        // เลียนแบบการคลิกที่พิกัด x: 277, y: 13
-        await page.click(ddlDoctype, { offset: { x: 277, y: 13 } });
+        // เลียนแบบการคลิกที่พิกัดใหม่ x: 626, y: 13.5
+        await page.click(ddlDoctype, { offset: { x: 626, y: 13.5 } });
         await new Promise(r => setTimeout(r, 500));
         await page.select(ddlDoctype, '1');
+
+        // --- New Logic: Tab x2 ---
+        console.log('   Pressing Tab x2...');
+        await page.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 200));
+        await page.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 500));
 
         // --- 3.2 Select OT = 14 ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
-            // เลียนแบบการคลิกที่พิกัด x: 242, y: 18
-            await page.click(ddlOt, { offset: { x: 242, y: 18 } });
-            await new Promise(r => setTimeout(r, 500));
+            // กรอก OT (Recorder ใช้ fill 14)
             await page.select(ddlOt, '14');
+            await new Promise(r => setTimeout(r, 500));
         }
 
         // --- 3.3 FROM Date Input Sequence ---
