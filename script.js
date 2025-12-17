@@ -231,7 +231,7 @@ const WEB_CONFIG = {
         console.log('   1. Clicking Export Icon...');
         const exportIconSelector = '[id$="_toptoolbar_export"]'; // Selector แบบยืดหยุ่น (Ends with)
         try {
-            await reportPage.waitForSelector(exportIconSelector, { timeout: 10000 });
+            await reportPage.waitForSelector(exportIconSelector, { timeout: 15000 });
             await reportPage.click(exportIconSelector, { offset: { x: 5, y: 7 } });
         } catch (e) {
             console.log('      ⚠️ Standard selector failed, trying aria-label...');
