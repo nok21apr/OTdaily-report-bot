@@ -78,11 +78,31 @@ const WEB_CONFIG = {
         console.log('✅ Login Success');
 
         // ---------------------------------------------------------
-        // 2. Navigation (Direct to Report URL based on new snippet)
+        // 2. Navigation
         // ---------------------------------------------------------
-        console.log('📂 Navigating to Report Page...');
-        await page.goto('https://leave.ttkasia.co.th/TTK/eLeave/Report/LeaveReport.aspx', { waitUntil: 'networkidle2' });
-        await takeSnap('03_arrived_report.png');
+        console.log('📂 Navigating to Report...');
+        const imgLeaveSelector = '#ctl00_ContentPlaceHolder1_imgLeave';
+        if (await page.$(imgLeaveSelector)) {
+            await Promise.all([
+                page.waitForNavigation({ waitUntil: 'networkidle2' }),
+                page.click(imgLeaveSelector)
+            ]);
+        }
+
+        const parentMenuSelector = '#ctl00_Report_Menu > a';
+        await page.waitForSelector(parentMenuSelector, { visible: true, timeout: 30000 });
+        await page.click(parentMenuSelector);
+        await new Promise(r => setTimeout(r, 1000));
+
+        const subMenuSelector = '#ctl00_Report_Menu > ul a'; 
+        await page.waitForSelector(subMenuSelector, { visible: true });
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'networkidle2' }),
+            page.click(subMenuSelector)
+        ]);
+
+        console.log('✅ Arrived at Report Page.');
+
 
         // ---------------------------------------------------------
         // 3. Fill Form (New Logic from Recorder)
