@@ -113,17 +113,10 @@ const WEB_CONFIG = {
         // --- 3.1 Select Doctype = 1 ---
         const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
         await page.waitForSelector(ddlDoctype);
-        // เลียนแบบการคลิกที่พิกัด x: 626, y: 13.48...
-        await page.click(ddlDoctype, { offset: { x: 626, y: 13.49 } });
+        // เลียนแบบการคลิกที่พิกัด x: 277, y: 13
+        await page.click(ddlDoctype, { offset: { x: 277, y: 13 } });
         await new Promise(r => setTimeout(r, 500));
         await page.select(ddlDoctype, '1');
-
-        // --- NEW 3.1 Logic: Tab x1 -> Enter ---
-        console.log('   3.1 Action: Tab -> Enter');
-        await page.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 300));
-        await page.keyboard.press('Enter');
-        await new Promise(r => setTimeout(r, 500));
 
         // --- 3.2 Select OT = 14 ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
