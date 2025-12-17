@@ -121,10 +121,19 @@ const WEB_CONFIG = {
         // --- 3.2 Select OT = 14 ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
-            // เลียนแบบการคลิกที่พิกัด x: 396, y: 15.52 (ตามโค้ดใหม่)
+            // เลียนแบบการคลิกที่พิกัด x: 396, y: 15.52
             await page.click(ddlOt, { offset: { x: 396, y: 15.52 } });
             await new Promise(r => setTimeout(r, 500));
             await page.select(ddlOt, '14');
+
+            // [NEW] เพิ่มตามคำขอ: กด Backspace 4 ครั้ง และ Enter
+            console.log('   3.2 Action: Backspace x4 -> Enter');
+            for (let i = 0; i < 4; i++) {
+                await page.keyboard.press('Backspace');
+                await new Promise(r => setTimeout(r, 200));
+            }
+            await page.keyboard.press('Enter');
+            await new Promise(r => setTimeout(r, 500));
         }
 
         // --- 3.3 FROM Date Input Sequence ---
