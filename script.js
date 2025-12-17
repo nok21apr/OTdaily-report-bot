@@ -143,9 +143,9 @@ const WEB_CONFIG = {
         }
         await new Promise(r => setTimeout(r, 300));
 
-        // Type '1'
-        console.log("      Typing '1'...");
-        await page.keyboard.type('01', { delay: 100 }) (พิมพ์ข้อความ 01);
+        // Type '01'
+        console.log("      Typing '01'...");
+        await page.keyboard.type('01', { delay: 100 });(พิมพ์ข้อความ 01)
         await new Promise(r => setTimeout(r, 300));
 
         // Press Tab
