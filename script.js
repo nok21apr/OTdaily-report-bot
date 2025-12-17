@@ -121,18 +121,11 @@ const WEB_CONFIG = {
         // --- 3.2 Select OT = 14 ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
-            await page.select(ddlOt, '14');
+            // เลียนแบบการคลิกที่พิกัด x: 242, y: 18
+            await page.click(ddlOt, { offset: { x: 242, y: 18 } });
             await new Promise(r => setTimeout(r, 500));
+            await page.select(ddlOt, '14');
         }
-
-        // --- NEW 3.2 Logic: Tab x4 -> Enter ---
-        console.log('   3.2 Action: Tab x4 -> Enter');
-        for (let i = 0; i < 4; i++) {
-            await page.keyboard.press('Tab');
-            await new Promise(r => setTimeout(r, 200));
-        }
-        await page.keyboard.press('Enter');
-        await new Promise(r => setTimeout(r, 500));
 
         // --- 3.3 FROM Date Input Sequence ---
         console.log('   Handling "From Date" Input...');
