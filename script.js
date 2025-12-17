@@ -106,23 +106,23 @@ const WEB_CONFIG = {
         await takeSnap('03_arrived_report.png');
 
         // ---------------------------------------------------------
-        // 3. Fill Form (UPDATED: Step 3.1 & 3.2 Logic)
+        // 3. Fill Form (UPDATED: Step 3.1 & 3.2 with New Offsets)
         // ---------------------------------------------------------
         console.log('📝 Filling form using updated logic...');
         
         // --- 3.1 Select Doctype = 1 ---
         const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
         await page.waitForSelector(ddlDoctype);
-        // เลียนแบบการคลิกที่พิกัด x: 277, y: 13
-        await page.click(ddlDoctype, { offset: { x: 277, y: 13 } });
+        // เลียนแบบการคลิกที่พิกัด x: 526, y: 16.49 (ตามโค้ดใหม่)
+        await page.click(ddlDoctype, { offset: { x: 526, y: 16.49 } });
         await new Promise(r => setTimeout(r, 500));
         await page.select(ddlDoctype, '1');
 
         // --- 3.2 Select OT = 14 ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
-            // เลียนแบบการคลิกที่พิกัด x: 242, y: 18
-            await page.click(ddlOt, { offset: { x: 242, y: 18 } });
+            // เลียนแบบการคลิกที่พิกัด x: 396, y: 15.52 (ตามโค้ดใหม่)
+            await page.click(ddlOt, { offset: { x: 396, y: 15.52 } });
             await new Promise(r => setTimeout(r, 500));
             await page.select(ddlOt, '14');
         }
@@ -209,7 +209,7 @@ const WEB_CONFIG = {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (UPDATED: From "เลือกdowload.txt")
+        // 5. Crystal Report Export (New Recorder Sequence)
         // ---------------------------------------------------------
         console.log('💾 Handling Crystal Report Export (New Recorder Sequence)...');
 
@@ -217,7 +217,7 @@ const WEB_CONFIG = {
         console.log('   1. Clicking Export Icon...');
         const exportIconSelector = '[id$="_toptoolbar_export"]'; // Selector แบบยืดหยุ่น (Ends with)
         try {
-            await reportPage.waitForSelector(exportIconSelector, { timeout: 15000 });
+            await reportPage.waitForSelector(exportIconSelector, { timeout: 10000 });
             await reportPage.click(exportIconSelector, { offset: { x: 5, y: 7 } });
         } catch (e) {
             console.log('      ⚠️ Standard selector failed, trying aria-label...');
