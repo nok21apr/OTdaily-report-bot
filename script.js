@@ -32,22 +32,14 @@ const WEB_CONFIG = {
     if (fs.existsSync(downloadPath)) fs.rmSync(downloadPath, { recursive: true, force: true });
     fs.mkdirSync(downloadPath);
 
-    // เปิด Browser (แก้ headless: false ถ้าอยากดูในเครื่องตัวเอง)
+    // [FIX 1] เพิ่ม protocolTimeout ป้องกัน Browser ตัดจบเวลาหน้าเว็บค้างนาน
     const browser = await puppeteer.launch({
-        headless: "new", 
-        protocolTimeout: 300000, // เพิ่มความอึดเป็น 5 นาที
+        headless: "new",
+        protocolTimeout: 300000, // 5 นาที
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     let page = await browser.newPage();
-
-    // ฟังก์ชั่นช่วยถ่ายรูป (ตั้งชื่อตามลำดับเลข)
-    const takeSnap = async (p, name) => {
-        try {
-            console.log(`📸 Snap: ${name}`);
-            await p.screenshot({ path: name, fullPage: true });
-        } catch(e) { console.log('⚠️ Snap failed: ' + name); }
-    };
 
     try {
         await page.emulateTimezone('Asia/Bangkok');
@@ -67,8 +59,6 @@ const WEB_CONFIG = {
         console.log('🔑 Logging in...');
         await page.goto('https://leave.ttkasia.co.th/Login/Login.aspx', { waitUntil: 'networkidle2', timeout: 60000 });
         
-        await takeSnap(page, '01_login_page.png'); // 📸 1
-
         await page.waitForSelector('#txtUsername', { visible: true });
         await page.type('#txtUsername', WEB_CONFIG.user.trim(), { delay: 50 });
         await page.type('#txtPassword', WEB_CONFIG.pass.trim(), { delay: 50 });
@@ -78,7 +68,6 @@ const WEB_CONFIG = {
             page.keyboard.press('Enter')
         ]);
         console.log('✅ Login Success');
-        await takeSnap(page, '02_logged_in.png'); // 📸 2
 
         // ---------------------------------------------------------
         // 2. Navigation
@@ -105,10 +94,9 @@ const WEB_CONFIG = {
         ]);
 
         console.log('✅ Arrived at Report Page.');
-        await takeSnap(page, '03_arrived_report.png'); // 📸 3
 
         // ---------------------------------------------------------
-        // 3. Fill Form & Date Logic (Fixed)
+        // 3. Fill Form & Date Logic (FIXED: Auto Date + Strict Typing)
         // ---------------------------------------------------------
         console.log('📝 Filling form...');
         await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddlDoctype', { visible: true });
@@ -121,28 +109,37 @@ const WEB_CONFIG = {
             await new Promise(r => setTimeout(r, 2000));
         }
 
-        // วันที่
+        // --- [Logic คำนวณวันที่อัตโนมัติ] ---
         const now = new Date();
-        const thaiYear = now.getFullYear() + 543;
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const firstDayValue = `01/${month}/${thaiYear}`;
+        const day = '01'; 
+        const month = String(now.getMonth() + 1).padStart(2, '0'); 
+        const year = now.getFullYear() + 543;
+        const targetDate = `${day}/${month}/${year}`; // เช่น "01/12/2568"
         
-        console.log(`📅 Setting date to: ${firstDayValue}`);
+        console.log(`📅 Setting date to: ${targetDate}`);
         const dateInputSelector = '#ctl00_ContentPlaceHolder1_txtFromDate';
         await page.waitForSelector(dateInputSelector);
         
-        // ลบค่าเก่าแบบชัวร์ๆ
+        // [FIX 2] ลบค่าเก่าแบบคนกด (Ctrl+A -> Backspace) แล้วพิมพ์ใหม่
         await page.click(dateInputSelector);
         await new Promise(r => setTimeout(r, 500));
-        await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
+
+        await page.keyboard.down('Control');
+        await page.keyboard.press('A');
+        await page.keyboard.up('Control');
         await page.keyboard.press('Backspace');
+        await new Promise(r => setTimeout(r, 500)); 
+
+        // พิมพ์ทีละตัวอักษร
+        await page.type(dateInputSelector, targetDate, { delay: 100 });
+        await new Promise(r => setTimeout(r, 500));
+
+        // [FIX 3] กด Enter ตามเงื่อนไข
+        await page.keyboard.press('Enter');
         
-        // พิมพ์ค่าใหม่
-        await page.type(dateInputSelector, firstDayValue, { delay: 100 });
-        await page.keyboard.press('Tab'); // ปิดปฏิทิน
-        await page.click('body'); // ย้ำปิดปฏิทิน
-        
-        await takeSnap(page, '04_form_filled.png'); // 📸 4 เช็ควันที่ตรงนี้
+        // ปิดปฏิทินที่อาจเด้งค้าง
+        await new Promise(r => setTimeout(r, 1000));
+        await page.click('body');
 
         // ---------------------------------------------------------
         // 4. Generate Report & SWITCH TAB
@@ -161,7 +158,6 @@ const WEB_CONFIG = {
         
         console.log('   Waiting 20s for Crystal Report Iframe...');
         await new Promise(r => setTimeout(r, 20000));
-        await takeSnap(reportPage, '05_report_loaded.png'); // 📸 5 เช็คหน้า Report
 
         const reportClient = await reportPage.target().createCDPSession();
         await reportClient.send('Page.setDownloadBehavior', {
@@ -170,45 +166,60 @@ const WEB_CONFIG = {
         });
 
         // ---------------------------------------------------------
-        // 5. Crystal Report Export (Slow Sequence)
+        // 5. Crystal Report Export (FIXED: Slow Sequence)
         // ---------------------------------------------------------
-        console.log('💾 Handling Crystal Report Export...');
+        console.log('💾 Handling Crystal Report Export via Keyboard...');
+
+        // คลิกที่ว่างๆ 1 ที เพื่อ Focus หน้าเว็บ
         try { await reportPage.click('body'); } catch(e) {}
         await new Promise(r => setTimeout(r, 2000));
 
-        // --- 1. Open Dialog ---
+        // --- Sequence 1: เปิด Dialog ---
+        console.log('   1. Opening Dialog (Tab x2 -> Enter)...');
         await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
         await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
         await reportPage.keyboard.press('Enter');
-        console.log('   Waiting 10s for Dialog...');
-        await new Promise(r => setTimeout(r, 10000));
-        await takeSnap(reportPage, '06_dialog_opened.png'); // 📸 6 เช็ค Dialog
+        
+        console.log('      (Waiting 10s for Dialog...)');
+        await new Promise(r => setTimeout(r, 10000)); // รอหน้าต่างเด้ง
 
-        // --- 2. Menu ---
+        // --- Sequence 2: เข้าเมนูเลือกไฟล์ ---
+        console.log('   2. Entering Format Menu (Tab x1 -> Enter)...');
         await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
         await reportPage.keyboard.press('Enter');
+        
+        console.log('      (Waiting 5s for Menu options...)');
         await new Promise(r => setTimeout(r, 5000));
-        await takeSnap(reportPage, '07_menu_list.png'); // 📸 7 เช็คเมนู
 
-        // --- 3. Select Excel ---
+        // --- Sequence 3: เลือก Excel Data-only ---
+        console.log('   3. Selecting "Excel Data-only" (Tab x4 -> Enter)...');
         for (let i = 0; i < 4; i++) {
             await reportPage.keyboard.press('Tab');
             await new Promise(r => setTimeout(r, 600));
         }
         await reportPage.keyboard.press('Enter');
-        console.log('   Waiting 5s for format selection...');
-        await new Promise(r => setTimeout(r, 5000));
-        await takeSnap(reportPage, '08_format_selected.png'); // 📸 8 เช็คว่าเลือก Excel ถูกไหม
-
-        // --- 4. Final Export ---
-        console.log('   Ready for Final Export...');
-        // Tab ครั้งที่ 1
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1500));
-        // Tab ครั้งที่ 2 (ควรจะถึงปุ่ม Export)
-        await reportPage.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 2000));
         
-        await takeSnap(reportPage, '09_final_focus.png'); // 📸 9 สำคัญมาก! ดูว่าโฟกัสอยู่ที่ปุ่มไหน
+        // [สำคัญ] รอหน้าเว็บโหลด Format ใหม่
+        console.log('      (Waiting 10s for selection to apply...)');
+        await new Promise(r => setTimeout(r, 10000)); 
 
+        // --- Sequence 4: กดปุ่ม Export สุดท้าย ---
+        console.log('   4. Clicking Export Button (Tab x2 -> Enter)...');
+        
+        // Tab 1
+        await reportPage.keyboard.press('Tab'); 
+        await new Promise(r => setTimeout(r, 1500));
+        
+        // Tab 2 (ถึงปุ่ม Export)
+        await reportPage.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 2000));
+
+        // [แถม] ถ่ายรูปเช็คว่าอยู่ถูกปุ่มไหม
+        console.log('      📸 Snap check_focus.png before Enter...');
+        try { await reportPage.screenshot({ path: 'check_focus.png', fullPage: true }); } catch(e){}
+
+        // กด Enter
+        console.log('      Pressing Enter to Download...');
         await reportPage.keyboard.press('Enter');
 
         // ---------------------------------------------------------
@@ -216,13 +227,11 @@ const WEB_CONFIG = {
         // ---------------------------------------------------------
         console.log('⬇️ Waiting for file...');
         let downloadedFile;
+        // รอสูงสุด 5 นาที
         for (let i = 0; i < 300; i++) { 
             await new Promise(r => setTimeout(r, 1000));
             if (fs.existsSync(downloadPath)) {
                 const files = fs.readdirSync(downloadPath);
-                // Log ดูไฟล์ทุกไฟล์ที่เจอ
-                if (i % 10 === 0) console.log(`   Scanned files: ${JSON.stringify(files)}`); 
-                
                 downloadedFile = files.find(file => !file.endsWith('.crdownload') && (file.endsWith('.xls') || file.endsWith('.xlsx')));
                 if (downloadedFile) break;
             }
@@ -271,12 +280,13 @@ const WEB_CONFIG = {
 
     } catch (error) {
         console.error('❌ Error occurred:', error);
-        // ถ่ายรูปสุดท้ายตอน Error เผื่อไว้
-        if (page && !page.isClosed()) await page.screenshot({ path: '99_error_final.png', fullPage: true });
-        
+        try {
+            if (page && !page.isClosed()) await page.screenshot({ path: 'error_main.png', fullPage: true });
+            const pages = await browser.pages();
+            if (pages.length > 1) await pages[pages.length-1].screenshot({ path: 'error_report.png', fullPage: true });
+        } catch(e){}
+
         if (browser) await browser.close();
         process.exit(1);
     }
 })();
-
-    
