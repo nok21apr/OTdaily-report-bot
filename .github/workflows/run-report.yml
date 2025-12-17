@@ -1,51 +1,56 @@
-ScriptReport
+name: Auto Daily Overtime Report
 
 on:
+  # 1. ตั้งเวลารันอัตโนมัติ (Schedule)
   schedule:
-    # รันตอน 8.00 น. เวลาไทย (01:00 UTC)
+    # เวลาใน GitHub เป็น UTC (ช้ากว่าไทย 7 ชม.)
+    # '0 1 * * *' = 01:00 UTC = 08:00 เช้าเวลาไทย
+    # ถ้าอยากเปลี่ยนเวลา ให้ลบ 7 จากเวลาไทยที่ต้องการ
     - cron: '0 1 * * *' 
-  workflow_dispatch: # ปุ่มกดรันเอง
+
+  # 2. ปุ่มกดรันมือ (Manual Trigger)
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     
-    # ตั้งค่า Timezone Server เป็นไทย
+    # ตั้งค่า Timezone ของเครื่อง Server ให้เป็นไทย
     env:
-      TZ: 'Asia/Bangkok' 
+      TZ: 'Asia/Bangkok'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      # 1. ดึงโค้ดล่าสุดมาจาก Repository
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      # 🟢 เพิ่ม: ติดตั้งฟอนต์ไทย เพื่อให้ Screenshot อ่านออก
-      - name: Install Thai Fonts
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-thai-tlwg
-
+      # 2. ติดตั้ง Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+      # 3. ติดตั้ง Library ที่ต้องใช้ (Puppeteer, Mail, Excel)
+      - name: Install Dependencies
+        run: |
+          npm install puppeteer nodemailer xlsx dotenv
 
-      - name: Run Script
+      # 4. รันสคริปต์บอท (อย่าลืมแก้ชื่อไฟล์ให้ตรงกับที่คุณอัปโหลด)
+      - name: Run Report Script
         env:
-        GMAIL_USER: ${{ secrets.GMAIL_USER }}
-        GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
-        WEB_USER: ${{ secrets.WEB_USER }}
-        WEB_PASS: ${{ secrets.WEB_PASS }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          # ดึงค่าจาก Settings > Secrets มาใส่ในตัวแปร Environment
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+          WEB_USER: ${{ secrets.WEB_USER }}
+          WEB_PASS: ${{ secrets.WEB_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: node Updated_Final_Script_v5.js
 
-        run: node script.js
-        
+      # 5. เก็บรูปภาพ Screenshot (ทำงานเสมอ แม้สคริปต์จะ Error)
       - name: Upload Debug Screenshots
-        if: always()   # <--- เปลี่ยนเป็น always() เพื่อให้ส่งรูปเสมอ ไม่ว่าจะ error หรือไม่
+        if: always() 
         uses: actions/upload-artifact@v4
         with:
-          name: debug-cctv-images
-          path: "*.png"   # <--- เก็บทุกรูปที่มีนามสกุล .png
-          retention-days: 5    
+          name: debug-evidence
+          path: "*.png"       # เก็บทุกรูปที่เป็น .png
+          retention-days: 1   # เก็บไว้ 1 วันแล้วลบทิ้ง (ประหยัดพื้นที่)
