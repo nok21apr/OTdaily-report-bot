@@ -111,21 +111,67 @@ const WEB_CONFIG = {
         console.log('📝 Filling form using updated logic...');
         
         // --- 3.1 Select Doctype = 1 ---
-        const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
-        await page.waitForSelector(ddlDoctype);
-        // เลียนแบบการคลิกที่พิกัด x: 526, y: 16.49 (ตามโค้ดใหม่)
-        await page.click(ddlDoctype, { offset: { x: 526, y: 16.49 } });
-        await new Promise(r => setTimeout(r, 500));
-        await page.select(ddlDoctype, '1');
-
-        // --- 3.2 Select OT = 14 ---
-        const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
-        if (await page.$(ddlOt)) {
-            // เลียนแบบการคลิกที่พิกัด x: 396, y: 15.52 (ตามโค้ดใหม่)
-            await page.click(ddlOt, { offset: { x: 396, y: 15.52 } });
-            await new Promise(r => setTimeout(r, 500));
-            await page.select(ddlOt, '14');
-        }
+         {
+        const targetPage = page;
+        await targetPage.setViewport({
+            width: 928,
+            height: 791
+        })
+    }
+    {
+        const targetPage = page;
+        await targetPage.goto('https://leave.ttkasia.co.th/TTK/eLeave/Report/LeaveReport.aspx');
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('#ctl00_ContentPlaceHolder1_ddlDoctype'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"ctl00_ContentPlaceHolder1_ddlDoctype\\"])'),
+            targetPage.locator(':scope >>> #ctl00_ContentPlaceHolder1_ddlDoctype')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 526,
+                y: 16.48828125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('#ctl00_ContentPlaceHolder1_ddlDoctype'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"ctl00_ContentPlaceHolder1_ddlDoctype\\"])'),
+            targetPage.locator(':scope >>> #ctl00_ContentPlaceHolder1_ddlDoctype')
+        ])
+            .setTimeout(timeout)
+            .fill('1');
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('#ctl00_ContentPlaceHolder1_ddlOt'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"ctl00_ContentPlaceHolder1_ddlOt\\"])'),
+            targetPage.locator(':scope >>> #ctl00_ContentPlaceHolder1_ddlOt')
+        ])
+            .setTimeout(timeout)
+            .click({
+              offset: {
+                x: 396,
+                y: 15.51953125,
+              },
+            });
+    }
+    {
+        const targetPage = page;
+        await puppeteer.Locator.race([
+            targetPage.locator('#ctl00_ContentPlaceHolder1_ddlOt'),
+            targetPage.locator('::-p-xpath(//*[@id=\\"ctl00_ContentPlaceHolder1_ddlOt\\"])'),
+            targetPage.locator(':scope >>> #ctl00_ContentPlaceHolder1_ddlOt')
+        ])
+            .setTimeout(timeout)
+            .fill('14');
+    }
 
         // --- 3.3 FROM Date Input Sequence ---
         console.log('   Handling "From Date" Input...');
