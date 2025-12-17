@@ -106,32 +106,40 @@ const WEB_CONFIG = {
         await takeSnap('03_arrived_report.png');
 
         // ---------------------------------------------------------
-        // 3. Fill Form (UPDATED: From "เลือกวันที่overtimereport.txt")
+        // 3. Fill Form (UPDATED: Step 3.1 & 3.2 Logic)
         // ---------------------------------------------------------
-        console.log('📝 Filling form using updated recorder logic...');
+        console.log('📝 Filling form using updated logic...');
         
         // --- 3.1 Select Doctype = 1 ---
         const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
         await page.waitForSelector(ddlDoctype);
-        // เลียนแบบการคลิกที่พิกัดใหม่ x: 626, y: 13.5
-        await page.click(ddlDoctype, { offset: { x: 626, y: 13.5 } });
+        // เลียนแบบการคลิกที่พิกัด x: 626, y: 13.48...
+        await page.click(ddlDoctype, { offset: { x: 626, y: 13.49 } });
         await new Promise(r => setTimeout(r, 500));
         await page.select(ddlDoctype, '1');
 
-        // --- New Logic: Tab x2 ---
-        console.log('   Pressing Tab x2...');
+        // --- NEW 3.1 Logic: Tab x1 -> Enter ---
+        console.log('   3.1 Action: Tab -> Enter');
         await page.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 200));
-        await page.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 300));
+        await page.keyboard.press('Enter');
         await new Promise(r => setTimeout(r, 500));
 
         // --- 3.2 Select OT = 14 ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
-            // กรอก OT (Recorder ใช้ fill 14)
             await page.select(ddlOt, '14');
             await new Promise(r => setTimeout(r, 500));
         }
+
+        // --- NEW 3.2 Logic: Tab x4 -> Enter ---
+        console.log('   3.2 Action: Tab x4 -> Enter');
+        for (let i = 0; i < 4; i++) {
+            await page.keyboard.press('Tab');
+            await new Promise(r => setTimeout(r, 200));
+        }
+        await page.keyboard.press('Enter');
+        await new Promise(r => setTimeout(r, 500));
 
         // --- 3.3 FROM Date Input Sequence ---
         console.log('   Handling "From Date" Input...');
@@ -160,7 +168,7 @@ const WEB_CONFIG = {
         await new Promise(r => setTimeout(r, 1000));
 
 
-        // --- 3.4 TO Date Input Sequence (NEW ADDITION) ---
+        // --- 3.4 TO Date Input Sequence ---
         console.log('   Handling "To Date" Input...');
         const toDateSelector = '#ctl00_ContentPlaceHolder1_txtToDate';
         // Click Offset x: 185, y: 14
@@ -227,7 +235,6 @@ const WEB_CONFIG = {
             await reportPage.click(exportIconSelector, { offset: { x: 5, y: 7 } });
         } catch (e) {
             console.log('      ⚠️ Standard selector failed, trying aria-label...');
-            // สำรอง: หาจาก Aria Label หรือ ID เต็มๆ จากไฟล์ recorder
             await reportPage.click('#IconImg_รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน_toptoolbar_export');
         }
         await new Promise(r => setTimeout(r, 2000)); // รอ Dialog เด้ง
@@ -251,7 +258,6 @@ const WEB_CONFIG = {
 
         // 3. คลิกปุ่ม Export Final Submit
         console.log('   3. Clicking Final Export Button...');
-        // ใช้ Selector ที่ลงท้ายด้วย _dialog_submitBtn (เพราะตัวเลขตรงกลาง 1765... จะเปลี่ยนไปเรื่อยๆ)
         const submitBtnSelector = '[id$="_dialog_submitBtn"]'; 
         
         try {
@@ -259,7 +265,6 @@ const WEB_CONFIG = {
             await reportPage.click(submitBtnSelector, { offset: { x: 12, y: 1 } });
         } catch (e) {
              console.log('      ⚠️ Submit button selector failed, trying fallback...');
-             // Fallback: ลองกด Enter เผื่อ Focus อยู่ที่ปุ่มแล้ว
              await reportPage.keyboard.press('Enter');
         }
         
