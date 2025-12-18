@@ -44,7 +44,7 @@ jobs:
           WEB_USER: ${{ secrets.WEB_USER }}
           WEB_PASS: ${{ secrets.WEB_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: node Updated_Final_Script_v5.js
+        run: node Updated_Final_Script_v6.js
 
       # 5. เก็บรูปภาพ Screenshot (ทำงานเสมอ แม้สคริปต์จะ Error)
       - name: Upload Debug Screenshots
