@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const xlsx = require('xlsx');
 
-// --- ตั้งค่าต่าง ๆ ---
+// --- ตั้งค่าต่างๆ ---
 const EMAIL_CONFIG = {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_PASS,
