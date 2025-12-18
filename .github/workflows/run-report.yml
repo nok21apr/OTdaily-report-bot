@@ -37,6 +37,7 @@ jobs:
 
       # 4. รันสคริปต์บอท (อย่าลืมแก้ชื่อไฟล์ให้ตรงกับที่คุณอัปโหลด)
       - name: Run Report Script
+        run: node script.js
         env:
           # ดึงค่าจาก Settings > Secrets มาใส่ในตัวแปร Environment
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
@@ -44,8 +45,7 @@ jobs:
           WEB_USER: ${{ secrets.WEB_USER }}
           WEB_PASS: ${{ secrets.WEB_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: node Script.js
-
+        
       # 5. เก็บรูปภาพ Screenshot (ทำงานเสมอ แม้สคริปต์จะ Error)
       - name: Upload Debug Screenshots
         if: always() 
