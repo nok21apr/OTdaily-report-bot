@@ -110,24 +110,41 @@ const WEB_CONFIG = {
         // ---------------------------------------------------------
         console.log('📝 Filling form using updated logic...');
         
-        // --- 3.1 Select Doctype = 1 ---
+        // --- 3.1 Select Doctype = "เอกสารขออนุมัติล่วงเวลา" ---
         const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
         await page.waitForSelector(ddlDoctype);
-        // เลียนแบบการคลิกที่พิกัด x: 642, y: 17.49 (ตามโค้ดใหม่)
-        await page.click(ddlDoctype, { offset: { x: 642, y: 17.49 } });
-        await new Promise(r => setTimeout(r, 500));
-        await page.select(ddlDoctype, '1');
+        
+        // Function to select option by text content
+        await page.evaluate((selector, textToFind) => {
+            const select = document.querySelector(selector);
+            const options = Array.from(select.options);
+            const optionToSelect = options.find(item => item.text.trim() === textToFind || item.text.includes(textToFind));
+            if (optionToSelect) {
+                select.value = optionToSelect.value;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }, ddlDoctype, "เอกสารขออนุมัติล่วงเวลา");
+        
+        await new Promise(r => setTimeout(r, 1000)); // รอโหลดหลังจากเลือก
 
-        // --- 3.2 Select OT (Updated from snippet) ---
+        // --- 3.2 Select OT = "รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน" ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
-            console.log('   3.2 Action: Clicking OT with offset & selecting 14...');
-            // เลียนแบบการคลิกที่พิกัด x: 636, y: 17.52
-            await page.click(ddlOt, { offset: { x: 636, y: 17.52 } });
-            await new Promise(r => setTimeout(r, 500));
-            // เลือกค่า 14
-            await page.select(ddlOt, '14');
+            console.log('   3.2 Action: Selecting OT report by label...');
+            
+            await page.evaluate((selector, textToFind) => {
+                const select = document.querySelector(selector);
+                const options = Array.from(select.options);
+                const optionToSelect = options.find(item => item.text.trim() === textToFind || item.text.includes(textToFind));
+                if (optionToSelect) {
+                    select.value = optionToSelect.value;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }, ddlOt, "รายงานรายละเอียดขออนุมัติใบโอทีของพนักงาน");
+            
+            await new Promise(r => setTimeout(r, 1000));
         }
+
 
         // --- 3.3 FROM Date Input Sequence ---
         console.log('   Handling "From Date" Input...');
