@@ -113,27 +113,20 @@ const WEB_CONFIG = {
         // --- 3.1 Select Doctype = 1 ---
         const ddlDoctype = '#ctl00_ContentPlaceHolder1_ddlDoctype';
         await page.waitForSelector(ddlDoctype);
-        // เลียนแบบการคลิกที่พิกัด x: 526, y: 16.49 (ตามโค้ดใหม่)
-        await page.click(ddlDoctype, { offset: { x: 526, y: 16.49 } });
+        // เลียนแบบการคลิกที่พิกัด x: 642, y: 17.49 (ตามโค้ดใหม่)
+        await page.click(ddlDoctype, { offset: { x: 642, y: 17.49 } });
         await new Promise(r => setTimeout(r, 500));
         await page.select(ddlDoctype, '1');
 
-        // --- 3.2 Select OT = 14 ---
+        // --- 3.2 Select OT (Updated from snippet) ---
         const ddlOt = '#ctl00_ContentPlaceHolder1_ddlOt';
         if (await page.$(ddlOt)) {
-            // เลียนแบบการคลิกที่พิกัด x: 396, y: 15.52
-            await page.click(ddlOt, { offset: { x: 396, y: 15.52 } });
+            console.log('   3.2 Action: Clicking OT with offset & selecting 14...');
+            // เลียนแบบการคลิกที่พิกัด x: 636, y: 17.52
+            await page.click(ddlOt, { offset: { x: 636, y: 17.52 } });
             await new Promise(r => setTimeout(r, 500));
+            // เลือกค่า 14
             await page.select(ddlOt, '14');
-
-            // [NEW] เพิ่มตามคำขอ: กด Backspace 4 ครั้ง และ Enter
-            console.log('   3.2 Action: Backspace x4 -> Enter');
-            for (let i = 0; i < 4; i++) {
-                await page.keyboard.press('Backspace');
-                await new Promise(r => setTimeout(r, 200));
-            }
-            await page.keyboard.press('Enter');
-            await new Promise(r => setTimeout(r, 500));
         }
 
         // --- 3.3 FROM Date Input Sequence ---
