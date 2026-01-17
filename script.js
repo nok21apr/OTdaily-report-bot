@@ -321,7 +321,7 @@ const WEB_CONFIG = {
         });
 
         await transporter.sendMail({
-            from: `"Auto Reporter" <${EMAIL_CONFIG.user}>`,
+            from: `"Overtime Reporter" <${EMAIL_CONFIG.user}>`,
             to: EMAIL_CONFIG.to,
             subject: EMAIL_CONFIG.subject,
             text: EMAIL_CONFIG.text,
