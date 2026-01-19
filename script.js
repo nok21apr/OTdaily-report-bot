@@ -324,8 +324,7 @@ const WEB_CONFIG = {
             from: `"Overtime Reporter" <${EMAIL_CONFIG.user}>`,
             to: EMAIL_CONFIG.to,
             subject: EMAIL_CONFIG.subject,
-            text: 'ถึง ผู้เกี่ยวข้อง',
-            'รายงานการทำงานล่วงเวลาประจำวัน',
+            text: `ถึง ผู้เกี่ยวข้อง\nรายงานการทำงานล่วงเวลาประจำวัน`,
             attachments: [{ filename: csvFileName, path: csvFilePath }]
         });
         console.log('✅ Email sent successfully!');
